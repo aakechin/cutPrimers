@@ -40,3 +40,5 @@ python3 cutPrimers.py -r1 example/1_S1_L001_R1_001.fastq -r2 example/1_S1_L001_R
   --primer-location-buffer, -plb - Buffer of primer location in the read from the end. Default: 10
   --threads, -t - number of threads
 ```
+## Citation
+Manuscript is prepared. Now you can cite it by link.
