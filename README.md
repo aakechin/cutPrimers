@@ -17,8 +17,9 @@ python3 cutPrimers.py -h
 ```
 
 ## Example of use
-As an example you can use files from directory examples. Try to trim them with the following command:
+As an example you can use files from directory examples. First untar them and try to trim them with the following commands:
 ```
+tar -xf example/*.tar.gz
 python3 cutPrimers.py -r1 example/1_S1_L001_R1_001.fastq -r2 example/1_S1_L001_R2_001.fastq -pr15 example/primers_R1_5.fa -pr25 example/primers_R2_5.fa -pr13 example/primers_R1_3.fa -pr23 example/primers_R2_3.fa -tr1 example/1_r1_trimmed.fastq -tr2 example/1_r2_trimmed.fastq -utr1 example/1_r1_untrimmed.fastq -utr2 example/1_r2_untrimmed.fastq -t 2
 ```
 
