@@ -74,10 +74,10 @@ def getErrors(s1,s2):
             muts.append(b+'/'+c)
     return(poses,muts)
 
-def trimPrimers(data):	
-	global primersR1_5,primersR1_3,primersR2_5,primersR2_3,primersFileR1_3,primersFileR2_3,primersFileR2_5,readsFileR2
-	global trimmedReadsR1,trimmedReadsR2,untrimmedReadsR1,untrimmedReadsR2
-	global allWork,maxPrimerLen,q1,q4,errNumber,primerLocBuf,readsPrimerNum,primersStatistics
+def trimPrimers(data):
+    global primersR1_5,primersR1_3,primersR2_5,primersR2_3,primersFileR1_3,primersFileR2_3,primersFileR2_5,readsFileR2
+    global trimmedReadsR1,trimmedReadsR2,untrimmedReadsR1,untrimmedReadsR2
+    global allWork,maxPrimerLen,q1,q4,errNumber,primerLocBuf,readsPrimerNum,primersStatistics
     # This function get two records from both read files (R1 and R2)
     # and trim them
     # As a result it returns list
