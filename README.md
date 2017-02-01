@@ -16,6 +16,13 @@ After that install the followong packages with respective commands in command li
 * **regex** - you can install it with: `python -m pip install regex`
 * **argparse** - you can install it with: `python -m pip install argparse`
 
+### Mac OS
+For use on Mac OS download and install python3.6 from www.python.org/downloads/
+After that install the followong packages with respective commands in command line:
+* **Biopython** - with: `pip install biopython`
+* **regex** - you can install it with: `pip install regex`
+* **argparse** - you can install it with: `pip install argparse`
+
 ## Installation
 cutPrimers does not require any installations
 
