@@ -320,7 +320,8 @@ if __name__ == "__main__":
     for res in p.imap_unordered(trimPrimers,zip(data1,data2)):
         doneWork+=1
         showPercWork(doneWork,allWork)
-        q4.put(res[1])
+        if res[1]!=[]:
+            q4.put(res[1])
         if readsFileR2:
             if res[0][0][0] is not None and res[0][0][1] is not None:
                 SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
