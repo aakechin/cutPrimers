@@ -9,7 +9,8 @@ cutPrimers works on the Python3+ and requires the following packages:
 * **argparse** - you can install it with: `sudo apt-get install python3-argparse` or download it from https://pypi.python.org/pypi/argparse and install it locally with `python3 setup.py install --user`
 
 ### Windows
-For use on windows download and install python3.6 from www.python.org/downloads/ (remember to check "Add python to PATH").
+For use on windows download and install python3.6 from www.python.org/downloads/ (**Attention! Remember to check "Add python to PATH"!**).
+
 After that install the followong packages with respective commands in command line (to run command line, search in Start menu "cmd" and run "cmd.exe"):
 * **Biopython** - with: `pip install biopython`. If you do not have Visual Studio C++ already installed, pip will show an error. In that case, download and install it from landinghub.visualstudio.com/visual-cpp-build-tools/
 * **regex** - you can install it with: `pip install regex`
@@ -17,6 +18,7 @@ After that install the followong packages with respective commands in command li
 
 ### Mac OS
 For use on Mac OS download and install python3.6 from www.python.org/downloads/
+
 After that install the followong packages with respective commands in command line:
 * **Biopython** - with: `pip install biopython`
 * **regex** - you can install it with: `pip install regex`
