@@ -16,6 +16,7 @@ import argparse
 import time,math
 from itertools import repeat
 from operator import itemgetter
+import hashlib
 
 def makeHashes(seq,k):
     # k is the length of parts
@@ -23,7 +24,7 @@ def makeHashes(seq,k):
     h=[]
     lens=set()
     for i in range(len(seq)-k+1):
-        h.append(hash(seq[i:i+k]))
+        h.append(hashlib.md5(seq[i:i+k].encode('utf-8')).hexdigest())
         lens.add(k)
     return(h,lens)
 
