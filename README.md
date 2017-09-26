@@ -34,10 +34,18 @@ python3 cutPrimers.py -h
 ```
 
 ## Example of use
-As an example you can use files from directory examples. First untar them and try to trim them with the following commands:
+As an example you can use files from directory "examples". Trim them with the following commands:
 ```
-tar -xf example/*.tar.gz
 python3 cutPrimers.py -r1 example/1_S1_L001_R1_001.fastq.gz -r2 example/1_S1_L001_R2_001.fastq.gz -pr15 example/primers_R1_5.fa -pr25 example/primers_R2_5.fa -pr13 example/primers_R1_3.fa -pr23 example/primers_R2_3.fa -tr1 example/1_r1_trimmed.fastq.gz -tr2 example/1_r2_trimmed.fastq.gz -utr1 example/1_r1_untrimmed.fastq.gz -utr2 example/1_r2_untrimmed.fastq.gz -t 2
+```
+As a result you should get four files with the following sizes: 4.3 Mb, 2.3 Mb, 3.7 Mb and 2.3 Mb for files with trimmed R1 reads, untrimmed R1 reads, trimmed R2 reads and untrimmed R2 reads, respectively. All files will be gzipped. cutPrimers can remove primer sequences both from gzipped and native FASTQ-files.
+
+Before using cutPrimers we recommend to use Trimmomatic for removing adaptor sequences from 3'-ends of reads. In this case, you will get more reliable results. You can use cutPrimers with Trimmomatic with the following commands:
+```
+mkdir example_trimmed
+java -jar trimmomatic-0.32.jar PE example/${i}_S${i}_L001_R1_001.fastq.gz example/${i}_S${i}_L001_R2_001.fastq.gz example_trimmed/patient_${i}.r1.ad_trimmed.fastq.gz example_trimmed/patient_${i}.r1.ad_unpaired.fastq.gz example_trimmed/patient_${i}.r2.ad_trimmed.fastq.gz example_trimmed/patient_${i}.r2.ad_unpaired.fastq.gz ILLUMINACLIP:examples/adapters.fa:3:10:7
+python3 cutPrimers.py -r1 example_trimmed/patient_${i}.r1.ad_trimmed.fastq.gz -r2 example_trimmed/patient_${i}.r2.ad_trimmed.fastq.gz -pr15 example/primers_R1_5.fa -pr13 example/primers_R1_3.fa -pr25 example/primers_R2_5.fa -pr23 example/primers_R2_3.fa -tr1 example_trimmed/patient_${i}.r1.ad_trimmed.trimmed.fastq.gz -tr2 example_trimmed/patient_${i}.r2.ad_trimmed.trimmed.fastq.gz -utr1 example_trimmed/patient_${i}.r1.ad_trimmed.untrimmed.fastq.gz -utr2 example_trimmed/patient_${i}.r2.ad_trimmed.untrimmed.fastq.gz -t 12 -primer3
+java -jar trimmomatic-0.32.jar PE example_trimmed/patient_${i}.r1.ad_trimmed.trimmed.fastq.gz example_trimmed/patient_${i}.r2.ad_trimmed.trimmed.fastq.gz example_trimmed/patient_${i}.r1.ad_trimmed.trimmed.qual_trimmed.fastq.gz example_trimmed/patient_${i}.r1.ad_trimmed.trimmed.qual_unpaired.fastq.gz example_trimmed/patient_${i}.r2.ad_trimmed.trimmed.qual_trimmed.fastq.gz example_trimmed/patient_${i}.r2.ad_trimmed.trimmed.qual_unpaired.fastq.gz LEADING:10 TRAILING:10 MINLEN:10
 ```
 
 ## Parameters
@@ -56,6 +64,8 @@ python3 cutPrimers.py -r1 example/1_S1_L001_R1_001.fastq.gz -r2 example/1_S1_L00
   --primersStatistics, -stat - name of file for statistics of errors in primers. This works only for paired-end reads with primers at 3'- and 5'-ends
   --error-number, -err - number of errors (substitutions, insertions, deletions) that allowed during searching primer sequence in a read sequence. Default: 5
   --primer-location-buffer, -plb - Buffer of primer location in the read from the end. Default: 10
+  --primer3-absent, -primer3 - if primer at the 3'-end may be absent, use this parameter
+  --identify-dimers IDIMER, -idimer IDIMER - use this parameter if you want to get statistics of homo- and heterodimer formation. Choose file to which statistics of primer-dimers will be written. This parameter may slightly decrease the speed of analysis
   --threads, -t - number of threads
 ```
 ## Citation
