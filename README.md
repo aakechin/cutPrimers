@@ -9,15 +9,16 @@ cutPrimers works on the Python3+ and requires the following packages:
 * **argparse** - you can install it with: `sudo apt-get install python3-argparse` or download it from https://pypi.python.org/pypi/argparse and install it locally with `python3 setup.py install --user`
 
 ### Windows
-For use on windows download and install python3.6 from www.python.org/downloads/ (remember to check "Add python to PATH")
-If you do not have Visual Studio C++ already installed, download and install it from landinghub.visualstudio.com/visual-cpp-build-tools/
-After that install the followong packages with respective commands in command line:
-* **Biopython** - with: `pip install biopython`
+For use on windows download and install python3.6 from www.python.org/downloads/ (**Attention! Remember to check "Add Python 3.6 to PATH" in the bottom of the installation window!**). After installation, restart your computer.
+
+After that, install the followong packages with respective commands in command line (to run command line, search in Start menu "cmd" and run "cmd.exe"):
+* **Biopython** - with: `pip install biopython`. If you do not have Visual Studio C++ already installed, pip will show an error. In that case, download and install it from landinghub.visualstudio.com/visual-cpp-build-tools/
 * **regex** - you can install it with: `pip install regex`
 * **argparse** - you can install it with: `pip install argparse`
 
 ### Mac OS
 For use on Mac OS download and install python3.6 from www.python.org/downloads/
+
 After that install the followong packages with respective commands in command line:
 * **Biopython** - with: `pip install biopython`
 * **regex** - you can install it with: `pip install regex`
@@ -36,7 +37,7 @@ python3 cutPrimers.py -h
 As an example you can use files from directory examples. First untar them and try to trim them with the following commands:
 ```
 tar -xf example/*.tar.gz
-python3 cutPrimers.py -r1 example/1_S1_L001_R1_001.fastq -r2 example/1_S1_L001_R2_001.fastq -pr15 example/primers_R1_5.fa -pr25 example/primers_R2_5.fa -pr13 example/primers_R1_3.fa -pr23 example/primers_R2_3.fa -tr1 example/1_r1_trimmed.fastq -tr2 example/1_r2_trimmed.fastq -utr1 example/1_r1_untrimmed.fastq -utr2 example/1_r2_untrimmed.fastq -t 2
+python3 cutPrimers.py -r1 example/1_S1_L001_R1_001.fastq.gz -r2 example/1_S1_L001_R2_001.fastq.gz -pr15 example/primers_R1_5.fa -pr25 example/primers_R2_5.fa -pr13 example/primers_R1_3.fa -pr23 example/primers_R2_3.fa -tr1 example/1_r1_trimmed.fastq.gz -tr2 example/1_r2_trimmed.fastq.gz -utr1 example/1_r1_untrimmed.fastq.gz -utr2 example/1_r2_untrimmed.fastq.gz -t 2
 ```
 
 ## Parameters
