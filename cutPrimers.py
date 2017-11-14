@@ -30,7 +30,7 @@ def makeHashes(seq,k):
 
 def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32,primersR2_52,primersR2_32,
                 primerR1_5_hashes2,primerR1_5_hashLens2,primerR2_5_hashes2,primerR2_5_hashLens2,
-                primersFileR1_32,primersFileR2_52,primersFileR2_32,readsFileR22,primersStatistics2,idimer2,primer3absent2):
+                primersFileR1_32,primersFileR2_52,primersFileR2_32,readsFileR22,primersStatistics2,idimer2,primer3absent2,minPrimer3Len2):
     global primersR1_5,primersR1_3,primersR2_5,primersR2_3,primersFileR1_3,primersFileR2_3,primersFileR2_5,readsFileR2
     global trimmedReadsR1,trimmedReadsR2,untrimmedReadsR1,untrimmedReadsR2
     global maxPrimerLen,q4,errNumber,primerLocBuf,readsPrimerNum,primersStatistics
@@ -51,6 +51,7 @@ def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32
     primersStatistics=primersStatistics2
     idimer=idimer2
     primer3absent=primer3absent2
+    minPrimer3Len=minPrimer3Len2
 
 # Section of functions
 def showPercWork(done,allWork):
@@ -223,19 +224,21 @@ def trimPrimers(data):
             primerNum2=primerNum
     # Find primer at the 3'-end of R1 read
     if primersFileR1_3:
-##        m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
-##        if m2==None:
-        errNumberDescreased=int(round(int(errNumber)*len(primersR1_3[primerNum][:-primerLocBuf-2])/len(primersR1_3[primerNum][:-2])))
-        m2=regex.search(r'(?:'+primersR1_3[primerNum][:-primerLocBuf-1]+')){e<='+str(errNumberDescreased)+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+        if not minPrimer3Len:
+            m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+        else:
+            errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum][:-2])))
+            m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
         if not primer3absent and m2==None:
             # Save this pair of reads to untrimmed sequences
             return([[None,None],[r1,r2]],[],[primerNum,primerNum2])
     # Find primer at the 3'-end of R2 read
     if primersFileR2_3:
-##        m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',str(r2.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
-##        if m4==None:
-        errNumberDescreased=int(round(int(errNumber)*len(primersR2_3[primerNum][:-primerLocBuf-2])/len(primersR2_3[primerNum][:-2])))
-        m4=regex.search(r'(?:'+primersR2_3[primerNum][:-primerLocBuf-1]+')){e<='+str(errNumberDescreased)+'}',str(r2.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+        if not minPrimer3Len:
+            m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',str(r2.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+        else:
+            errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR2_3[primerNum][:-2])))
+            m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r2.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
         if not primer3absent and m4==None:
             # Save this pair of reads to untrimmed sequences
             return([[None,None],[r1,r2]],[],[primerNum,primerNum2])
@@ -281,6 +284,7 @@ if __name__ == "__main__":
     par.add_argument('--primersStatistics','-stat',dest='primersStatistics',type=str,help='name of file for statistics of errors in primers. This works only for paired-end reads with primers at 3\'- and 5\'-ends',required=False)
     par.add_argument('--error-number','-err',dest='errNumber',type=int,help='number of errors (substitutions, insertions, deletions) that allowed during searching primer sequence in a read sequence. Default: 5',default=5)
     par.add_argument('--primer-location-buffer','-plb',dest='primerLocBuf',type=int,help='Buffer of primer location in the read from the end. Default: 10',default=10)
+    par.add_argument('--min-primer3-length','-primer3len',dest='minPrimer3Len',type=int,help="Minimal length of primer on the 3'-end to trim. Use this parameter, if you are ready to trim only part of primer sequence of the 3'-end of read")
     par.add_argument('--primer3-absent','-primer3',dest='primer3absent',action='store_true',help="if primer at the 3'-end may be absent, use this parameter")
     par.add_argument('--identify-dimers','-idimer',dest='idimer',type=str,help='use this parameter if you want to get statistics of homo- and heterodimer formation. Choose file to which statistics of primer-dimers will be written. This parameter may slightly decrease the speed of analysis')
     par.add_argument('--threads','-t',dest='threads',type=int,help='number of threads',default=2)
@@ -293,6 +297,7 @@ if __name__ == "__main__":
     primersFileR1_3=args.primersFileR1_3
     primersFileR2_3=args.primersFileR2_3
     primer3absent=args.primer3absent
+    minPrimer3Len=args.minPrimer3Len
     errNumber=str(args.errNumber)
     primerLocBuf=args.primerLocBuf
     primersStatistics=args.primersStatistics
@@ -499,7 +504,7 @@ if __name__ == "__main__":
     primerErrorQ=[] 
     p=Pool(threads,initializer,(maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
                                 primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
-                                primersFileR1_3,primersFileR2_5,primersFileR2_3,readsFileR2,primersStatistics,idimer,primer3absent))
+                                primersFileR1_3,primersFileR2_5,primersFileR2_3,readsFileR2,primersStatistics,idimer,primer3absent,minPrimer3Len))
     # Cutting primers and writing result immediately
     print('Trimming primers from reads...')
     doneWork=0
