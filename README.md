@@ -6,7 +6,7 @@ curPrimers is a tool for trimming primer sequences from amplicon based NGS reads
 cutPrimers works on the Python3+ and requires the following packages:
 * **Biopython** - you can install it with: `sudo apt-get install python3-biopython` or download it from http://biopython.org/wiki/Download and install it locally with `python3 setup.py install --user`
 * **regex** - you can install it with: `sudo apt-get install python3-regex`  or download it from https://pypi.python.org/pypi/regex/ and install it locally with `python3 setup.py install --user`
-* **argparse** - you can install it with: `sudo apt-get install python3-argparse` or download it from https://pypi.python.org/pypi/argparse and install it locally with `python3 setup.py install --user`
+* **argparse** - you can install it with: `sudo pip3 install argparse` or download it from https://pypi.python.org/pypi/argparse and install it locally with `python3 setup.py install --user`
 
 ### Windows
 For use on windows download and install python3.6 from www.python.org/downloads/ (**Attention! Remember to check "Add Python 3.6 to PATH" in the bottom of the installation window!**). After installation, restart your computer.
