@@ -22,10 +22,9 @@ def makeHashes(seq,k):
     # k is the length of parts
     subSeqs=[]
     h=[]
-    lens=set()
+    lens=set([k])
     for i in range(len(seq)-k+1):
         h.append(hashlib.md5(seq[i:i+k].encode('utf-8')).hexdigest())
-        lens.add(k)
     return(h,lens)
 
 def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32,primersR2_52,primersR2_32,
