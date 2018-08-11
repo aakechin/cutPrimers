@@ -63,7 +63,7 @@ java -jar trimmomatic-0.32.jar PE example_trimmed/patient_${i}.r1.ad_trimmed.tri
   --untrimmedReadsR2, -utr2 - name of file for untrimmed R2 reads
   --primersStatistics, -stat - name of file for statistics of errors in primers. This works only for paired-end reads with primers at 3'- and 5'-ends
   --error-number, -err - number of errors (substitutions, insertions, deletions) that allowed during searching primer sequence in a read sequence. Default: 5
-  --primer-location-buffer, -plb - Buffer of primer location in the read from the end. Default: 10
+  --primer-location-buffer, -plb - Buffer of primer location in the read from the start or end of read. If this value is zero, than cutPrimers will search for primer sequence in the region of the longest primer length. Default: 10
   --min-primer3-length MINPRIMER3LEN, -primer3len MINPRIMER3LEN - minimal length of primer on the 3'-end to trim. Use this parameter, if you are ready to trim only part of primer sequence of the 3'-end of read
   --primer3-absent, -primer3 - if primer at the 3'-end may be absent, use this parameter
   --identify-dimers IDIMER, -idimer IDIMER - use this parameter if you want to get statistics of homo- and heterodimer formation. Choose file to which statistics of primer-dimers will be written. This parameter may slightly decrease the speed of analysis
