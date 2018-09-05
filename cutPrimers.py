@@ -320,6 +320,19 @@ if __name__ == "__main__":
         print('ERROR! Could not create file:',args.trimmedReadsR1)
         print('########')
         exit(0)
+    if args.untrimmedReadsR1==args.trimmedReadsR1:
+        untrimmedReadsR1=trimmedReadsR1
+    else:
+        try:
+            if args.untrimmedReadsR1[-3:]!='.gz':
+                untrimmedReadsR1=open(args.untrimmedReadsR1,'w')
+            else:
+                untrimmedReadsR1=gzip.open(args.untrimmedReadsR1,'wt')
+        except FileNotFoundError:
+            print('########')
+            print('ERROR! Could not create file:',args.untrimmedReadsR1)
+            print('########')
+            exit(0)
     if args.trimmedReadsR2:
         try:
             if args.trimmedReadsR2[-3:]!='.gz':
@@ -331,19 +344,6 @@ if __name__ == "__main__":
             print('ERROR! Could not create file:',args.trimmedReadsR2)
             print('########')
             exit(0)
-        if args.untrimmedReadsR1==args.trimmedReadsR1:
-            untrimmedReadsR1=trimmedReadsR1
-        else:
-            try:
-                if args.untrimmedReadsR1[-3:]!='.gz':
-                    untrimmedReadsR1=open(args.untrimmedReadsR1,'w')
-                else:
-                    untrimmedReadsR1=gzip.open(args.untrimmedReadsR1,'wt')
-            except FileNotFoundError:
-                print('########')
-                print('ERROR! Could not create file:',args.untrimmedReadsR1)
-                print('########')
-                exit(0)
     if args.untrimmedReadsR2:
         if args.untrimmedReadsR2==args.trimmedReadsR2:
             untrimmedReadsR2=trimmedReadsR2
