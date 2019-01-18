@@ -368,9 +368,6 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
     amplBlockStart=None
     amplBlockEnd=None
     m1,m2,m3,m4=None,None,None,None
-    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-        print(r)
-        print(r.cigar)
     # R1-read
     if (str(bin(r.flag))[-7]=='1' and str(bin(r.flag))[-5]=='1') or (len(str(bin(r.flag)))>=10 and str(bin(r.flag))[-8]=='1' and str(bin(r.flag))[-6]=='0'):
         if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
@@ -435,14 +432,10 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
     else:
         return(None,r)
     if newRead:
-        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-            print(newRead)
         if newRead.alen<minReadLen:
             return(None,r) 
         return(True,newRead)
     else:
-        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-            print(r)
         return(None,r)        
 
 def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumChrom):
@@ -469,8 +462,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
     oldCigar=r.cigar
     cigarStr=''
     amplLen=r.alen
-    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-        print(start,end,amplBlockChrom,amplBlockStart,amplBlockEnd)
     if hardClipping:
         clip='5'
         quals=r.qual
@@ -486,8 +477,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
 ##                                      r.pos+amplLen/2<amplBlockStart or r.pos>amplBlockEnd):
         return(None)
         amplBlockStart=-1
-    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-        print(r.pos,r.alen,r.reference_name,r.reference_name==amplBlockChrom)
     if not amplBlockEnd or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
         return(None)
         amplBlockEnd=10000000000
@@ -530,8 +519,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
         (end==None or end<endSoftClipped)):
         end=None
     newCigarStr=''
-    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-        print(newPos,amplLen,amplBlockEnd)
     if (start or newPos<amplBlockStart-1) and (end or newPos+amplLen>amplBlockEnd):
         # We should consider deletions. We do not take them into account, while determining how we should trim cigar
         if not start:
@@ -570,8 +557,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
                         if cigarStr[j]!='1':
                             newPos+=1
                         newStart+=1
-                if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-                    print(j,newPos,newStart,newEnd,amplBlockEnd)
                 # we do not use -1, because pos+length is the position that is next to the last position
                 if j>newEnd and newPos-newStart+newEnd<=amplBlockEnd:
                     break
@@ -595,8 +580,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
             if hardClipping:
                 r.seq=r.seq[newStart:-(len(cigarStr)-newEnd)]
                 r.qual=quals[newStart:-(len(cigarStr)-newEnd)]
-        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-            print(newStart,newEnd,newPos)
             if startReady or endReady:
                 print(startSoftClippedNum,endSoftClippedNum)
     elif (start or newPos<amplBlockStart-1):
@@ -642,9 +625,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
             if hardClipping:
                 r.seq=r.seq[newStart:]
                 r.qual=quals[newStart:]
-        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-            print(newStart,newPos)
-            print(startSoftClippedNum)
     elif (end or newPos+amplLen>amplBlockEnd):
         # We should consider deletions. We do not count them when determine, how we should trim cigar
         delAfterEnd=0
@@ -654,8 +634,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
         endSoftClippedNum=newEnd
         if '2' in cigarStr or '1' in cigarStr:
             for j in range(len(cigarStr)):
-                if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-                    print(j,newEnd,newPos,amplBlockEnd)
                 # we do not use -1, because pos+length is the position that is next to the last position
                 if j>newEnd and newPos+newEnd<=amplBlockEnd:
                     break
@@ -676,9 +654,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
             if hardClipping:
                 r.seq=r.seq[:-(len(cigarStr)-newEnd)]
                 r.qual=quals[:-(len(cigarStr)-newEnd)]
-        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
-            print(newEnd,newPos)
-            print(endSoftClippedNum)
     newCigar=[]
     if len(newCigarStr)==0:
         return(None)
@@ -1223,14 +1198,10 @@ if __name__ == "__main__":
         p=ThreadPool(threads)
         # Cutting primers and writing result immediately
         print('Trimming primers from reads of BAM-file...')
-        ### TODO: change position of mate pair read
-        ### TODO: what to do with hard-clipped reads?
         results=[]
         # Dictionary that stores positions of each read by read name and its flag value
         matePositions={}
         for r in reads:
-##            if r.query_name!='MN00909:4:000H2KVY2:1:22102:14195:2113':
-##                continue
             results.append(p.apply_async(trimPrimersInBam,args=(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
                                                                 primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
                                                                 primersFileR1_3,primersFileR2_5,primersFileR2_3,primer3absent,minPrimer3Len,minReadLen,hardClipping)))
