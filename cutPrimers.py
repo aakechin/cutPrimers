@@ -2,21 +2,26 @@
 # v14 - added ability to read and write to gzipped files; speed of processing was increased 10-times
 # v15 - added ability to write untrimmed and trimmed reads to one file. Also added possibility that 3'-primer may be absent
 # v16 - added ability to trim on the 3'-end only part of primer sequence
+# v20 - added ability to trim primers in BAM-files
+#       added ability to trim degenerate primers        
 
 # Section of importing modules
 import sys
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio import pairwise2
-import glob,gzip
-import regex
-import time
+bamNotAvailable=False
+try:
+    import pysam
+except ModuleNotFoundError:
+    print('WARNING: You do not have pysam module installed. You cannot trim primer sequences from BAM-files!')
+    print('Install it or if you use Windows, you can not trim primers from BAM-files at all')
+    bamNotAvailable=True
+import glob,gzip,regex,time,argparse,math,hashlib,pysam,re
 from multiprocessing import Pool,Queue
-import argparse
-import time,math
+from multiprocessing.pool import ThreadPool
 from itertools import repeat
 from operator import itemgetter
-import hashlib
 
 def makeHashes(seq,k):
     # k is the length of parts
@@ -29,7 +34,8 @@ def makeHashes(seq,k):
 
 def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32,primersR2_52,primersR2_32,
                 primerR1_5_hashes2,primerR1_5_hashLens2,primerR2_5_hashes2,primerR2_5_hashLens2,
-                primersFileR1_32,primersFileR2_52,primersFileR2_32,readsFileR22,primersStatistics2,idimer2,primer3absent2,minPrimer3Len2):
+                primersFileR1_32,primersFileR2_52,primersFileR2_32,readsFileR22,primersStatistics2,
+                idimer2,primer3absent2,minPrimer3Len2):
     global primersR1_5,primersR1_3,primersR2_5,primersR2_3,primersFileR1_3,primersFileR2_3,primersFileR2_5,readsFileR2
     global trimmedReadsR1,trimmedReadsR2,untrimmedReadsR1,untrimmedReadsR2
     global maxPrimerLen,q4,errNumber,primerLocBuf,readsPrimerNum,primersStatistics
@@ -60,6 +66,26 @@ def showPercWork(done,allWork):
 
 def revComplement(nuc):
     return(str(Seq(nuc).reverse_complement()))
+
+def ambToRegList(seq):
+    ambToNucs={'W':'[AT]',
+               'Y':'[CT]',
+               'R':'[AG]',
+               'K':'[TG]',
+               'S':'[CG]',
+               'M':'[AC]',
+               'B':'[TGC]',
+               'H':'[ATC]',
+               'D':'[AGT]',
+               'V':'[AGC]',
+               'N':'[ATGC]'}
+    newSeq=[]
+    for nuc in seq:
+        if nuc in ambToNucs.keys():
+            newSeq.append(ambToNucs[nuc])
+        else:
+            newSeq.append(nuc)
+    return(''.join(newSeq))
 
 def countDifs(s1,s2):
     a=pairwise2.align.globalms(s1,s2,2,-1,-1.53,0)
@@ -244,13 +270,17 @@ def trimPrimers(data):
     # If all primers were found
     # Trim sequences of primers and write them to result file
     if primersFileR1_3 and m2!=None:
+        r1.description+=':'+str(primerNum+1)
         resList[0][0]=r1[m1.span()[1]:len(r1.seq)-maxPrimerLen-primerLocBuf+m2.span()[0]]
     else:
+        r1.description+=':'+str(primerNum+1)
         resList[0][0]=r1[m1.span()[1]:]
     if readsFileR2:
         if primersFileR2_3 and m4!=None:
+            r2.description+=':'+str(primerNum+1)
             resList[0][1]=r2[m3.span()[1]:len(r2.seq)-maxPrimerLen-primerLocBuf+m4.span()[0]]
         elif primersFileR2_5:
+            r2.description+=':'+str(primerNum+1)
             resList[0][1]=r2[m3.span()[1]:]
     # Save number of errors and primers sequences
     # [number of primer,difs1,difs2,difs3,difs4,]
@@ -266,19 +296,447 @@ def trimPrimers(data):
         return (resList,[primerNum,difs1,difs2,difs3,difs4],False)
     else:
         return (resList,[],False)
+
+def getPrimerNumFromRead(r,primersR1_5,primerR1_5_hashes,primerR1_5_hashLens,maxPrimerLen,primerLocBuf,readNum=1):
+    readHashes=set()
+    if readNum==1:
+        for l in primerR1_5_hashLens:
+            hashes,lens=makeHashes(str(r.seq[-maxPrimerLen-primerLocBuf:]),l)
+            readHashes.update(hashes)
+    else:
+        for l in primerR1_5_hashLens:
+            hashes,lens=makeHashes(str(r.seq[:maxPrimerLen+primerLocBuf]),l)
+            readHashes.update(hashes)
+    matchedPrimers={}
+    for rh in readHashes:
+        if rh in primerR1_5_hashes.keys():
+            for a in primerR1_5_hashes[rh]:
+                if a not in matchedPrimers.keys():
+                    matchedPrimers[a]=1
+                else:
+                    matchedPrimers[a]+=1
+    bestPrimer=None
+    bestPrimerValue=None
+    goodPrimers=[]
+    goodPrimerNums=[]
+    for key,item in sorted(matchedPrimers.items(),key=itemgetter(1),reverse=True):
+        if bestPrimer==None:
+            bestPrimer=key
+            bestPrimerValue=item
+            continue
+        if item>=bestPrimerValue-1:
+            goodPrimers.append(primersR1_5[key])
+            goodPrimerNums.append(key)
+        else: break
+    if bestPrimer!=None:
+        if readNum==1:
+            m1=regex.search(r''+primersR1_5[bestPrimer]+'{e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+        else:
+            m1=regex.search(r''+primersR1_5[bestPrimer]+'{e<='+errNumber+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+    else:
+        return(None,None)
+    # Use result of searching 5'-primer
+    if m1==None:
+        if len(goodPrimers)>0:
+            if readNum==1:
+                m1=regex.search(r'(?:'+'|'.join(goodPrimers)+'){e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+            else:
+                m1=regex.search(r'(?:'+'|'.join(goodPrimers)+'){e<='+errNumber+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+            if m1==None:
+                # Save this pair of reads to untrimmed sequences
+                return(None,None)
+            else:
+                primerNum=goodPrimerNums[list(m1.groups()).index(m1[0])]
+        else:
+            return(None,None)
+    else:
+        primerNum=bestPrimer
+    return(primerNum,m1)
+
+def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
+                     primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
+                     primersFileR1_3,primersFileR2_5,primersFileR2_3,primer3absent,minPrimer3Len,minReadLen,hardClipping):
+    # This function get aligned read from BAM-file
+    # As a result it returns read with newered information
+    # Find primer at the 5'-end of R1 read
+    if len(r.cigar)==0 or r.alen<minReadLen or 'H' in r.cigarstring:
+        return(None,r)
+    chrom=r.reference_name
+    if chrom in coordToPrimerNum.keys():
+        primerNumsCovered=getTheMostFitPrimerNumByPos(r.pos,r.alen,maxPrimerLen,coordToPrimerNum[chrom])
+    amplBlockChrom=None
+    amplBlockStart=None
+    amplBlockEnd=None
+    m1,m2,m3,m4=None,None,None,None
+    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+        print(r)
+        print(r.cigar)
+    # R1-read
+    if (str(bin(r.flag))[-7]=='1' and str(bin(r.flag))[-5]=='1') or (len(str(bin(r.flag)))>=10 and str(bin(r.flag))[-8]=='1' and str(bin(r.flag))[-6]=='0'):
+        if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
+            primerNum,m1=getPrimerNumFromRead(r,primersR1_5,primerR1_5_hashes,primerR1_5_hashLens,maxPrimerLen,primerLocBuf,readNum=1)
+            if primerNum is None:
+                return(None,r)
+        else:
+            for primerNum,val in sorted(primerNumsCovered.items(),key=itemgetter(1),reverse=True):
+                m1=regex.search(r''+primersR1_5[primerNum]+'{e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                if m1!=None:
+                    break
+            if m1==None:
+                return(None,r)
+        amplBlockChrom,amplBlockStart,amplBlockEnd=amplCoords[primerNum]
+        # Find primer at the 3'-end of R1 read
+        if primersFileR1_3:
+            if not minPrimer3Len:
+                m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+            else:
+                errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum][:-2])))
+                m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+        # If all primers were found
+        # Trim sequences of primers and write them to result file
+        if m1!=None and primersFileR1_3 and m2!=None:
+            # To perform soft clipping we should change cigar value and position
+            newRead=trimCigar(r,m2.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m1.span()[0],amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+        elif m1!=None and ((primersFileR1_3 and primer3absent) or
+                           not primersFileR1_3):
+            newRead=trimCigar(r,None,len(r.seq)-maxPrimerLen-primerLocBuf+m1.span()[0],amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+        else:
+            return(None,r)
+##            newRead=trimCigar(r,None,None,amplBlockChrom,amplBlockStart,amplBlockEnd)
+    # R2-read
+    elif (len(str(bin(r.flag)))>=10 and str(bin(r.flag))[-8]=='1' and str(bin(r.flag))[-6]=='1') or (str(bin(r.flag))[-7]=='1' and str(bin(r.flag))[-5]=='0'):
+        if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
+            primerNum,m3=getPrimerNumFromRead(r,primersR2_5,primerR2_5_hashes,primerR2_5_hashLens,maxPrimerLen,primerLocBuf,readNum=2)
+            if primerNum is None:
+                return(None,r)
+        else:
+            for primerNum,val in sorted(primerNumsCovered.items(),key=itemgetter(1),reverse=True):
+                m3=regex.search(r''+primersR2_5[primerNum]+'{e<='+errNumber+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                if m3!=None:
+                    break
+            if m3==None:
+                return(None,r)
+        amplBlockChrom,amplBlockStart,amplBlockEnd=amplCoords[primerNum]
+        # Find primer at the 3'-end of R2 read
+        if primersFileR2_3:
+            if not minPrimer3Len:
+                m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+            else:
+                errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR2_3[primerNum][:-2])))
+                m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+        if m3!=None and primersFileR2_3 and m4!=None:
+            newRead=trimCigar(r,m3.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m4.span()[0],amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+        elif primersFileR2_5 and m3!=None and ((primersFileR2_3 and primer3absent) or
+                                               not primersFileR2_3):
+            newRead=trimCigar(r,m3.span()[1],None,amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+        elif primersFileR2_5:
+            return(None,r)
+##            newRead=trimCigar(r,None,None,amplBlockChrom,amplBlockStart,amplBlockEnd)
+    else:
+        return(None,r)
+    if newRead:
+        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+            print(newRead)
+        if newRead.alen<minReadLen:
+            return(None,r) 
+        return(True,newRead)
+    else:
+        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+            print(r)
+        return(None,r)        
+
+def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumChrom):
+##    poses=[]
+    primerNumsCovered={}
+    for pos in range(readStart+maxPrimerLen,readStart+readLen+1):
+##    # Check the first base after maximal length of primer + position of read
+##    poses.append(readStart+maxPrimerLen+1)
+##    # Check the middle base between primer sequence and end of read
+##    poses.append(int(round((readStart+maxPrimerLen+readStart+readLen)/2,0)))
+##    # Check the middle base between two added positions
+##    poses.append(int(round((poses[0]+poses[1])/2,0)))    
+##    for pos in poses:
+        if pos not in coordToPrimerNumChrom.keys():
+            continue
+        for primerNum in coordToPrimerNumChrom[pos]:
+            if primerNum not in primerNumsCovered.keys():
+                primerNumsCovered[primerNum]=1
+            else:
+                primerNumsCovered[primerNum]+=1
+    return(primerNumsCovered)
+
+def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,amplBlockEnd=None,hardClipping=False):
+    oldCigar=r.cigar
+    cigarStr=''
+    amplLen=r.alen
+    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+        print(start,end,amplBlockChrom,amplBlockStart,amplBlockEnd)
+    if hardClipping:
+        clip='5'
+        quals=r.qual
+    else:
+        clip='4'
+    if start:
+        newPos=r.pos+start
+        amplLen-=start
+    else:
+        newPos=r.pos
+    if not amplBlockStart or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
+##        if not start and not end and (not amplBlockEnd or amplBlockChrom!=r.reference_name or
+##                                      r.pos+amplLen/2<amplBlockStart or r.pos>amplBlockEnd):
+        return(None)
+        amplBlockStart=-1
+    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+        print(r.pos,r.alen,r.reference_name,r.reference_name==amplBlockChrom)
+    if not amplBlockEnd or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
+        return(None)
+        amplBlockEnd=10000000000
+    for cig in oldCigar:
+        cigarStr+=str(cig[0])*cig[1]
+    # Remove hard clipped nucleotides
+    cigarStr=cigarStr.strip('5')
+    # Shift newPos onto number of S in cigar
+    startSoftClipped=0
+    try:
+        if cigarStr[0]=='4' and (start or r.pos<amplBlockStart):
+            p=re.compile(cigarStr[0]+'+')
+            m=p.findall(cigarStr)
+            startSoftClipped=len(m[0])
+            newPos-=len(m[0])
+            amplLen+=len(m[0])
+    except IndexError:
+        print('ERROR:',oldCigar)
+        print(r)
+        exit(0)
+    # Shift newPos onto number of S in cigar
+    endSoftClipped=0
+    try:
+        if cigarStr[-1]=='4' and (end or r.pos+r.alen>amplBlockEnd):
+            p=re.compile(cigarStr[-1]+'+')
+            m=p.findall(cigarStr)
+            endSoftClipped=len(r.seq)-len(m[-1])
+    except IndexError:
+        print('ERROR:',oldCigar)
+        print(r)
+        exit(0)
+    # Check if soft-clipped sequence is alredy trimmed more than primer sequence
+    if (amplBlockChrom==r.reference_name and
+        r.pos>=amplBlockStart and
+        (start==None or start<startSoftClipped)):
+        start=None
+        newPos=r.pos
+    if (amplBlockChrom==r.reference_name and
+        r.pos+r.alen<=amplBlockEnd and
+        (end==None or end<endSoftClipped)):
+        end=None
+    newCigarStr=''
+    if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+        print(newPos,amplLen,amplBlockEnd)
+    if (start or newPos<amplBlockStart-1) and (end or newPos+amplLen>amplBlockEnd):
+        # We should consider deletions. We do not take them into account, while determining how we should trim cigar
+        if not start:
+            start=0
+        # New start of matches in cigar 
+        newStart=start
+        if not end:
+            end=len(cigarStr)
+        newEnd=end
+        startReady=False
+        endReady=False
+        if '2' in cigarStr or '1' in cigarStr:
+            # Number of soft-clipped nucleotides before newStart
+            ## It can differ due to deletions
+            startSoftClippedNum=newStart
+            endSoftClippedNum=newEnd
+            for j in range(len(cigarStr)):
+                if j>=newStart and newPos>=amplBlockStart-1:
+                    startReady=True
+                if not startReady:
+                    if j<newStart:
+                        # If there is deletion before end of primer
+                        if cigarStr[j]=='2':
+                            newPos+=1
+                            newStart+=1
+                        # If there is an insertion before end of primer
+                        elif cigarStr[j]=='1':
+                            newPos-=1
+                    # If primer sequence was removed, but read is wider than amplicon
+                    ## -1 because when we read BAM-file with pysam, all positions starts from 0
+                    elif newPos<amplBlockStart-1:
+                        # Increase number of soft clipped nucleotides in all cases, except for deletions
+                        if cigarStr[j]!='2':
+                            startSoftClippedNum+=1
+                        # Increase position in all cases, except for insertions
+                        if cigarStr[j]!='1':
+                            newPos+=1
+                        newStart+=1
+                if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+                    print(j,newPos,newStart,newEnd,amplBlockEnd)
+                # we do not use -1, because pos+length is the position that is next to the last position
+                if j>newEnd and newPos-newStart+newEnd<=amplBlockEnd:
+                    break
+                if j<=newEnd:
+                    # If there is deletion before start of primer
+                    if cigarStr[j]=='2':# and newPos+newEnd<amplBlockEnd:
+                        newEnd+=1
+            if newPos-newStart+newEnd>amplBlockEnd:
+                # startSoftClipped is a number of 'S' in the initial cigar
+                newEnd=amplBlockEnd-r.pos+startSoftClipped
+            endSoftClippedNum=len(cigarStr)-newEnd-cigarStr[newEnd:].count('2')
+            newCigarStr=clip*startSoftClippedNum+cigarStr[newStart:newEnd]+clip*(endSoftClippedNum)
+            if hardClipping:
+                r.seq=r.seq[startSoftClippedNum:-endSoftClippedNum]
+                r.qual=quals[startSoftClippedNum:-endSoftClippedNum]
+        else:
+            newStart=max(start,amplBlockStart-r.pos+startSoftClipped-1)
+            newPos=max(newPos,amplBlockStart-1)
+            newEnd=min(newEnd,amplBlockEnd-r.pos+startSoftClipped)
+            newCigarStr=clip*newStart+cigarStr[newStart:newEnd]+clip*(len(cigarStr)-newEnd)
+            if hardClipping:
+                r.seq=r.seq[newStart:-(len(cigarStr)-newEnd)]
+                r.qual=quals[newStart:-(len(cigarStr)-newEnd)]
+        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+            print(newStart,newEnd,newPos)
+            if startReady or endReady:
+                print(startSoftClippedNum,endSoftClippedNum)
+    elif (start or newPos<amplBlockStart-1):
+        # We should consider deletions. We do not take them into account, while determining how we should trim cigar
+        if not start:
+            start=0
+        # New start of matches in cigar 
+        newStart=start
+        # Number of soft-clipped nucleotides before newStart
+        ## It can differ due to deletions
+        startSoftClippedNum=newStart
+        if '2' in cigarStr or '1' in cigarStr:
+            for j in range(len(cigarStr)):
+                if j>=newStart and newPos>=amplBlockStart-1:
+                    break
+                if j<newStart:
+                    # If there is deletion before end of primer
+                    if cigarStr[j]=='2':
+                        newPos+=1
+                        newStart+=1
+                    # If there is an insertion before end of primer
+                    elif cigarStr[j]=='1':
+                        newPos-=1
+                # If primer sequence was removed, but read is wider than amplicon
+                ## -1 because when we read BAM-file with pysam, all positions starts from 0
+                elif newPos<amplBlockStart-1:
+                    # Increase number of soft clipped nucleotides in all cases, except for deletions
+                    if cigarStr[j]!='2':
+                        startSoftClippedNum+=1
+                    # Increase position in all cases, except for insertions
+                    if cigarStr[j]!='1':
+                        newPos+=1
+                    newPos+=1
+                    newStart+=1
+            newCigarStr=clip*startSoftClippedNum+cigarStr[newStart:]
+            if hardClipping:
+                r.seq=r.seq[startSoftClippedNum:]
+                r.qual=quals[startSoftClippedNum:]
+        else:
+            newStart=max(start,amplBlockStart-r.pos-1)
+            newPos=max(newPos,amplBlockStart-1)
+            newCigarStr=clip*newStart+cigarStr[newStart:]
+            if hardClipping:
+                r.seq=r.seq[newStart:]
+                r.qual=quals[newStart:]
+        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+            print(newStart,newPos)
+            print(startSoftClippedNum)
+    elif (end or newPos+amplLen>amplBlockEnd):
+        # We should consider deletions. We do not count them when determine, how we should trim cigar
+        delAfterEnd=0
+        if not end:
+            end=len(cigarStr)
+        newEnd=end
+        endSoftClippedNum=newEnd
+        if '2' in cigarStr or '1' in cigarStr:
+            for j in range(len(cigarStr)):
+                if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+                    print(j,newEnd,newPos,amplBlockEnd)
+                # we do not use -1, because pos+length is the position that is next to the last position
+                if j>newEnd and newPos+newEnd<=amplBlockEnd:
+                    break
+                if j<=newEnd:
+                    # If there is deletion before start of primer
+                    if cigarStr[j]=='2':# and newPos+newEnd<amplBlockEnd:
+                        newEnd+=1
+            if newPos+newEnd>amplBlockEnd:
+                newEnd=amplBlockEnd-r.pos+startSoftClipped
+            endSoftClippedNum=len(cigarStr)-newEnd-cigarStr[newEnd:].count('2')
+            newCigarStr=cigarStr[:newEnd]+clip*(endSoftClippedNum)
+            if hardClipping:
+                r.seq=r.seq[:-endSoftClippedNum]
+                r.qual=quals[:-endSoftClippedNum]
+        else:
+            newEnd=min(newEnd,amplBlockEnd-r.pos)
+            newCigarStr=cigarStr[:newEnd]+clip*(len(cigarStr)-newEnd)
+            if hardClipping:
+                r.seq=r.seq[:-(len(cigarStr)-newEnd)]
+                r.qual=quals[:-(len(cigarStr)-newEnd)]
+        if r.query_name=='MN00909:4:000H2KVY2:1:22102:14195:2113':
+            print(newEnd,newPos)
+            print(endSoftClippedNum)
+    newCigar=[]
+    if len(newCigarStr)==0:
+        return(None)
+    while(len(newCigarStr)>0):
+        p=re.compile(newCigarStr[0]+'+')
+        m=p.findall(newCigarStr)
+        newCigar.append((int(newCigarStr[0]),len(m[0])))
+        newCigarStr=newCigarStr.replace(m[0],'',1)
+    r.cigar=newCigar
+    r.pos=newPos
+    return(r)
+
+def changeMateCoordinates(r,matePositions):
+    if r.is_read1:
+        if (r.query_name+'_2' in matePositions.keys() and
+            matePositions[r.query_name+'_2'][0]!=None):
+            r.mrnm=matePositions[r.query_name+'_2'][0]
+            r.mpos=matePositions[r.query_name+'_2'][1]+1
+        else:
+            r.mate_is_unmapped=True
+            r.mrnm=r.reference_id
+            r.mpos=r.pos+1
+    elif r.is_read2:
+        if (r.query_name+'_1' in matePositions.keys() and
+            matePositions[r.query_name+'_1'][0]!=None):
+            r.mrnm=matePositions[r.query_name+'_1'][0]
+            r.mpos=matePositions[r.query_name+'_1'][1]+1
+        else:
+            r.mate_is_unmapped=True
+            r.mrnm=r.reference_id
+            r.mpos=r.pos+1
+    else:
+        r.mate_is_unmapped=True
+        r.mrnm=r.reference_id
+        r.mpos=r.pos+1
+    return(r)
+        
     
 if __name__ == "__main__":    
     # Section of reading arguments
     par=argparse.ArgumentParser(description='This script cuts primers from reads sequences')
-    par.add_argument('--readsFile_r1','-r1',dest='readsFile1',type=str,help='file with R1 reads of one sample',required=True)
+    par.add_argument('--readsFile_r1','-r1',dest='readsFile1',type=str,help='file with R1 reads of one sample',required=False)
     par.add_argument('--readsFile_r2','-r2',dest='readsFile2',type=str,help='file with R2 reads of one sample',required=False)
+    if not bamNotAvailable:
+        par.add_argument('--bam-file','-bam',dest='bamFile',type=str,help='BAM-file in which you want to cut primers from reads',required=False)
+        par.add_argument('--coordinates-file','-coord',dest='coordsFile',type=str,help='file with coordinates of amplicons in the BED-format (without column names and locations of primers): chromosome | start | end. '
+                         'It is necessary for cutting primer sequences from BAM-file. Its order should be the same as for files with primer sequences',required=False)
+        par.add_argument('--out-bam-file','-outbam',dest='outBamFile',type=str,help='name of file for output BAM-file with reads',required=False)
+        par.add_argument('--out-untrimmed-bam-file','-outbam2',dest='outUntrimmedBamFile',type=str,help='name of file for output BAM-file with untrimmed reads. It is not required. If you do not use this parameter, all untrimmed reads will be lost',required=False)
+        par.add_argument('--minimal-read-length','-minlen',dest='minReadLen',type=int,help='minimal length of read after trimming. Default: 10',default=10)
+        par.add_argument('--hard-clipping','-hard',dest='hardClipping',action='store_true',help='use this parameter, if you want to trim reads wuith hard clipping. By default, primer sequences are trimmed with soft-clipping')
     par.add_argument('--primersFileR1_5','-pr15',dest='primersFileR1_5',type=str,help='fasta-file with sequences of primers on the 5\'-end of R1 reads',required=True)
     par.add_argument('--primersFileR2_5','-pr25',dest='primersFileR2_5',type=str,help='fasta-file with sequences of primers on the 5\'-end of R2 reads. Do not use this parameter if you have single-end reads',required=False)
     par.add_argument('--primersFileR1_3','-pr13',dest='primersFileR1_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R1 reads. It is not required. But if it is determined, -pr23 is necessary',required=False)
     par.add_argument('--primersFileR2_3','-pr23',dest='primersFileR2_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R2 reads',required=False)
-    par.add_argument('--trimmedReadsR1','-tr1',dest='trimmedReadsR1',type=str,help='name of file for trimmed R1 reads',required=True)
+    par.add_argument('--trimmedReadsR1','-tr1',dest='trimmedReadsR1',type=str,help='name of file for trimmed R1 reads',required=False)
     par.add_argument('--trimmedReadsR2','-tr2',dest='trimmedReadsR2',type=str,help='name of file for trimmed R2 reads',required=False)
-    par.add_argument('--untrimmedReadsR1','-utr1',dest='untrimmedReadsR1',type=str,help='name of file for untrimmed R1 reads. If you want to write reads that has not been trimmed to the same file as trimmed reads, type the same name',required=True)
+    par.add_argument('--untrimmedReadsR1','-utr1',dest='untrimmedReadsR1',type=str,help='name of file for untrimmed R1 reads. If you want to write reads that has not been trimmed to the same file as trimmed reads, type the same name',required=False)
     par.add_argument('--untrimmedReadsR2','-utr2',dest='untrimmedReadsR2',type=str,help='name of file for untrimmed R2 reads. If you want to write reads that has not been trimmed to the same file as trimmed reads, type the same name',required=False)
     par.add_argument('--primersStatistics','-stat',dest='primersStatistics',type=str,help='name of file for statistics of errors in primers. This works only for paired-end reads with primers at 3\'- and 5\'-ends',required=False)
     par.add_argument('--error-number','-err',dest='errNumber',type=int,help='number of errors (substitutions, insertions, deletions) that allowed during searching primer sequence in a read sequence. Default: 5',default=5)
@@ -291,6 +749,12 @@ if __name__ == "__main__":
     print('The command was:\n',' '.join(sys.argv))
     readsFileR1=args.readsFile1
     readsFileR2=args.readsFile2
+    if not bamNotAvailable:
+        bamFile=args.bamFile
+        coordsFile=args.coordsFile
+        minReadLen=args.minReadLen
+    else:
+        bamFile=None
     primersFileR1_5=args.primersFileR1_5
     primersFileR2_5=args.primersFileR2_5
     primersFileR1_3=args.primersFileR1_3
@@ -301,38 +765,52 @@ if __name__ == "__main__":
     primerLocBuf=args.primerLocBuf
     primersStatistics=args.primersStatistics
     idimer=args.idimer
+    if not bamFile and not readsFileR1:
+        print('ERROR: you should use at least -r1 or -bam argument with native or aligned reads, respectively!')
+        exit(1)
     if (primersFileR1_3 and not primersFileR1_5) or (not primersFileR2_5 and primersFileR2_3):
         print('ERROR: use of -pr13 or -pr23 should be accompanied by use of second one parameter for 5\'-end')
-        exit(0)
-    if (not readsFileR2 and primersFileR2_5) or (not readsFileR2 and primersFileR2_3):
+        exit(1)
+    if not bamFile and ((not readsFileR2 and primersFileR2_5) or (not readsFileR2 and primersFileR2_3)):
         print('ERROR: use of -pr23 or -pr25 should be accompanied by use of readsFile2 parameter')
-        exit(0)
+        exit(1)
     if readsFileR2 and not primersFileR2_5:
         print('ERROR: use of -r2 parameter should be accompanied by use of at least -pr25 parameter')
-        exit(0)
+        exit(1)
+    if readsFileR1 and (not args.trimmedReadsR1 or not args.untrimmedReadsR1):
+        print('ERROR! If you use FASTQ-file as an input, you should use -tr1 and -utr1 arguments for output reads')
+        exit(1)
+    if bamFile and not args.outBamFile:
+        print('ERROR! If you use BAM-file as an input, you should use -outbam for output aligned reads')
+        exit(1)
+    if bamFile and not coordsFile:
+        print('ERROR! If you use BAM-file as an input, you should use -coord for file with coordinates of amplicons')
+        exit(1)
     try:
-        if args.trimmedReadsR1[-3:]!='.gz':
-            trimmedReadsR1=open(args.trimmedReadsR1,'w')
-        else:
-            trimmedReadsR1=gzip.open(args.trimmedReadsR1,'wt')
+        if args.trimmedReadsR1:
+            if args.trimmedReadsR1[-3:]!='.gz':
+                trimmedReadsR1=open(args.trimmedReadsR1,'w')
+            else:
+                trimmedReadsR1=gzip.open(args.trimmedReadsR1,'wt')
     except FileNotFoundError:
         print('########')
         print('ERROR! Could not create file:',args.trimmedReadsR1)
         print('########')
         exit(0)
-    if args.untrimmedReadsR1==args.trimmedReadsR1:
-        untrimmedReadsR1=trimmedReadsR1
-    else:
-        try:
-            if args.untrimmedReadsR1[-3:]!='.gz':
-                untrimmedReadsR1=open(args.untrimmedReadsR1,'w')
-            else:
-                untrimmedReadsR1=gzip.open(args.untrimmedReadsR1,'wt')
-        except FileNotFoundError:
-            print('########')
-            print('ERROR! Could not create file:',args.untrimmedReadsR1)
-            print('########')
-            exit(0)
+    if args.untrimmedReadsR1 and args.trimmedReadsR1:
+        if args.untrimmedReadsR1==args.trimmedReadsR1:
+            untrimmedReadsR1=trimmedReadsR1
+        else:
+            try:
+                if args.untrimmedReadsR1[-3:]!='.gz':
+                    untrimmedReadsR1=open(args.untrimmedReadsR1,'w')
+                else:
+                    untrimmedReadsR1=gzip.open(args.untrimmedReadsR1,'wt')
+            except FileNotFoundError:
+                print('########')
+                print('ERROR! Could not create file:',args.untrimmedReadsR1)
+                print('########')
+                exit(0)
     if args.trimmedReadsR2:
         try:
             if args.trimmedReadsR2[-3:]!='.gz':
@@ -392,9 +870,13 @@ if __name__ == "__main__":
     try:
         for r in SeqIO.parse(primersFileR1_5,'fasta'):
             primersR1_5_names.append(r.name)
-            primersR1_5.append('('+str(r.seq)+')')
-            partLens=math.floor(len(r.seq)/(int(errNumber)+1))
-            hashes,lens=makeHashes(str(r.seq),partLens)
+            if bamFile:
+                primerSeq=str(r.seq.reverse_complement())
+            else:
+                primerSeq=str(r.seq)
+            primersR1_5.append('('+ambToRegList(primerSeq)+')')
+            partLens=math.floor(len(primerSeq)/(int(errNumber)+1))
+            hashes,lens=makeHashes(primerSeq,partLens)
             primerR1_5_hashLens.update(lens)
             for h in hashes:
                 if h in primerR1_5_hashes.keys():
@@ -417,9 +899,13 @@ if __name__ == "__main__":
         try:
             for r in SeqIO.parse(primersFileR2_5,'fasta'):
                 primersR2_5_names.append(r.name)
-                primersR2_5.append('('+str(r.seq)+')')
-                partLens=math.floor(len(r.seq)/(int(errNumber)+1))
-                hashes,lens=makeHashes(str(r.seq),partLens)
+##                if bamFile:
+##                    primerSeq=str(r.seq.reverse_complement())
+##                else:
+                primerSeq=str(r.seq)
+                primersR2_5.append('('+ambToRegList(primerSeq)+')')
+                partLens=math.floor(len(primerSeq)/(int(errNumber)+1))
+                hashes,lens=makeHashes(primerSeq,partLens)
                 primerR2_5_hashLens.update(lens)
                 for h in hashes:
                     if h in primerR2_5_hashes.keys():
@@ -443,7 +929,11 @@ if __name__ == "__main__":
         try:
             for r in SeqIO.parse(primersFileR1_3,'fasta'):
                 primersR1_3_names.append(r.name)
-                primersR1_3.append('('+str(r.seq)+')')
+                if bamFile:
+                    primerSeq=str(r.seq.reverse_complement())
+                else:
+                    primerSeq=str(r.seq)
+                primersR1_3.append('('+ambToRegList(primerSeq)+')')
                 if len(r.seq)>maxPrimerLen:
                     maxPrimerLen=len(r.seq)
         except FileNotFoundError:
@@ -460,7 +950,8 @@ if __name__ == "__main__":
         try:
             for r in SeqIO.parse(primersFileR2_3,'fasta'):
                 primersR2_3_names.append(r.name)
-                primersR2_3.append('('+str(r.seq)+')')
+                primerSeq=str(r.seq)
+                primersR2_3.append('('+ambToRegList(primerSeq)+')')
                 if len(r.seq)>maxPrimerLen:
                     maxPrimerLen=len(r.seq)
         except FileNotFoundError:
@@ -471,211 +962,340 @@ if __name__ == "__main__":
     else:
         primersR2_3=None
     # Read file with R1 and R2 reads
-    try:
-        if readsFileR1[-3:]!='.gz':
-            allWork=open(readsFileR1).read().count('\n')/4
-        else:
-            allWork=gzip.open(readsFileR1,'rt').read().count('\n')/4
-    except FileNotFoundError:
-        print('########')
-        print('ERROR! Could not open file:',readsFileR1)
-        print('########')
-        exit(0)
-    print('Reading input FASTQ-file(s)...')
-    if readsFileR1[-3:]!='.gz':
-        data1=SeqIO.parse(readsFileR1,'fastq')
-    else:
-        data1=SeqIO.parse(gzip.open(readsFileR1,'rt'),'fastq')
-    if readsFileR2:
+    if readsFileR1:
         try:
-            if readsFileR2[-3:]!='.gz':
-                data2=SeqIO.parse(readsFileR2,'fastq')
+            if readsFileR1[-3:]!='.gz':
+                allWork=open(readsFileR1).read().count('\n')/4
             else:
-                data2=SeqIO.parse(gzip.open(readsFileR2,'rt'),'fastq')
+                allWork=gzip.open(readsFileR1,'rt').read().count('\n')/4
         except FileNotFoundError:
             print('########')
-            print('ERROR! Could not open file:',readsFileR2)
+            print('ERROR! Could not open file:',readsFileR1)
             print('########')
             exit(0)
-    else:
-        data2=['']*int(allWork)
-    # Create Queue for storing result and Pool for multiprocessing
-    primerErrorQ=[] 
-    p=Pool(threads,initializer,(maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
-                                primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
-                                primersFileR1_3,primersFileR2_5,primersFileR2_3,readsFileR2,primersStatistics,idimer,primer3absent,minPrimer3Len))
-    # Cutting primers and writing result immediately
-    print('Trimming primers from reads...')
-    doneWork=0
-    showPercWork(0,allWork)
-    for res in p.imap_unordered(trimPrimers,zip(data1,data2),10):
-        doneWork+=1
-        showPercWork(doneWork,allWork)
-        if res[1]!=[]:
-            primerErrorQ.append(res[1])
+    if readsFileR1:
+        print('Reading input FASTQ-file(s)...')
+        if readsFileR1[-3:]!='.gz':
+            data1=SeqIO.parse(readsFileR1,'fastq')
+        else:
+            data1=SeqIO.parse(gzip.open(readsFileR1,'rt'),'fastq')
         if readsFileR2:
-            if res[0][0][0] is not None and res[0][0][1] is not None:
-                SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
-                SeqIO.write(res[0][0][1],trimmedReadsR2,'fastq')
-            elif res[0][1][0] is not None and res[0][1][1] is not None:
-                # If user want to identify primer-dimers
-                if idimer and res[2]:
-                    r1partSeq=str(res[0][1][0].seq[:40])
-                    r2partSeq=revComplement(str(res[0][1][1].seq[:40]))
-                    difs=countDifs(r1partSeq,r2partSeq)
-                    if sum(difs[0:2])<=int(errNumber):
-                        # and len(difs[3])>=len(primersR1_5[res[2][0]])
-                        if primersR1_5_names[res[2][0]]+' & '+primersR2_5_names[res[2][1]] not in primerDimers.keys():
-                            primerDimers[primersR1_5_names[res[2][0]]+' & '+primersR2_5_names[res[2][1]]]=1
+            try:
+                if readsFileR2[-3:]!='.gz':
+                    data2=SeqIO.parse(readsFileR2,'fastq')
+                else:
+                    data2=SeqIO.parse(gzip.open(readsFileR2,'rt'),'fastq')
+            except FileNotFoundError:
+                print('########')
+                print('ERROR! Could not open file:',readsFileR2)
+                print('########')
+                exit(0)
+        else:
+            data2=['']*int(allWork)
+    
+        # Create Queue for storing result and Pool for multiprocessing
+        primerErrorQ=[] 
+        p=Pool(threads,initializer,(maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
+                                    primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
+                                    primersFileR1_3,primersFileR2_5,primersFileR2_3,readsFileR2,primersStatistics,
+                                    idimer,primer3absent,minPrimer3Len))
+        # Cutting primers and writing result immediately
+        print('Trimming primers from reads...')
+        doneWork=0
+        showPercWork(0,allWork)
+        for res in p.imap_unordered(trimPrimers,zip(data1,data2),10):
+            doneWork+=1
+            showPercWork(doneWork,allWork)
+            if res[1]!=[]:
+                primerErrorQ.append(res[1])
+            if readsFileR2:
+                if res[0][0][0] is not None and res[0][0][1] is not None:
+                    SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
+                    SeqIO.write(res[0][0][1],trimmedReadsR2,'fastq')
+                elif res[0][1][0] is not None and res[0][1][1] is not None:
+                    # If user want to identify primer-dimers
+                    if idimer and res[2]:
+                        r1partSeq=str(res[0][1][0].seq[:40])
+                        r2partSeq=revComplement(str(res[0][1][1].seq[:40]))
+                        difs=countDifs(r1partSeq,r2partSeq)
+                        if sum(difs[0:2])<=int(errNumber):
+                            # and len(difs[3])>=len(primersR1_5[res[2][0]])
+                            if primersR1_5_names[res[2][0]]+' & '+primersR2_5_names[res[2][1]] not in primerDimers.keys():
+                                primerDimers[primersR1_5_names[res[2][0]]+' & '+primersR2_5_names[res[2][1]]]=1
+                            else:
+                                primerDimers[primersR1_5_names[res[2][0]]+' & '+primersR2_5_names[res[2][1]]]+=1
                         else:
-                            primerDimers[primersR1_5_names[res[2][0]]+' & '+primersR2_5_names[res[2][1]]]+=1
+                            SeqIO.write(res[0][1][0],untrimmedReadsR1,'fastq')
+                            SeqIO.write(res[0][1][1],untrimmedReadsR2,'fastq')
                     else:
                         SeqIO.write(res[0][1][0],untrimmedReadsR1,'fastq')
                         SeqIO.write(res[0][1][1],untrimmedReadsR2,'fastq')
+                            
                 else:
+                    print('ERROR: nor the 1st item of function result list or 2nd contains anything')
+                    print(res)
+                    exit(0)
+            else:
+                if res[0][0][0] is not None:
+                    SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
+                elif res[0][1][0] is not None:
                     SeqIO.write(res[0][1][0],untrimmedReadsR1,'fastq')
-                    SeqIO.write(res[0][1][1],untrimmedReadsR2,'fastq')
-                        
-            else:
-                print('ERROR: nor the 1st item of function result list or 2nd contains anything')
-                print(res)
-                exit(0)
-        else:
-            if res[0][0][0] is not None:
-                SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
-            elif res[0][1][0] is not None:
-                SeqIO.write(res[0][1][0],untrimmedReadsR1,'fastq')
-            else:
-                print('ERROR: item of function result list contains anything')
-                print(res)
-                exit(0)
-    print()
-    # primersErrors is a dictionary that contains errors in primers
-    if args.primersStatistics:
-        primersErrors={}
-        # primersErrorsPos is a dictionary that contains statistics about location
-        # of errors
-        primersErrorsPos={}
-        # primersErrorsType is a dictionary that contains statistics about type of error
-        primersErrorsType={}
-        print('Counting errors...')
-        for item in primerErrorQ:
-            # If key for this primer has not been created, yet
-            if not item[0] in primersErrors.keys():
-                # For each primer of each pair we will gather the following values:
-                # [(0)number of read pairs,
-                # (1)number of primers without errors,
-                # (2)number of primers with sequencing errors,
-                # (3)number of primers with synthesis errors
-                # The first item of list - F
-                # The second - R
-                primersErrors[item[0]]=[[0,0,0,0],[0,0,0,0]]
-                
-##          R                           F_reverse_complement
-## R1 5'---------________________________---------3'
-## R2 5'---------________________________---------3'
-##          F                           R_reverse_complement
-                
-            # Increase number of read pairs
-            primersErrors[item[0]][0][0]+=1
-            primersErrors[item[0]][1][0]+=1
-            # F-primers of pairs
-            # The last variant is a case when we have single-end reads and 3' does not contain primer sequence
-            if ((not primersFileR1_3 and primersFileR2_5 and item[3][0:3]==(0,0,0)) or
-                (primersFileR1_3 and primersFileR2_5 and item[3][0:3]==(0,0,0) and item[2][0:3]==(0,0,0)) or
-                (primersFileR1_5 and not primersFileR2_5 and not primersFileR1_3 and not primersFileR2_3)):
-                primersErrors[item[0]][0][1]+=1
-            # If it was overlapping paired-end reads, we try to check if this is sequencing error
-            elif primersFileR1_3 and primersFileR2_5 and primersFileR2_3 and item[2][3]!='' and item[3][3]!='':
-                # Rererse complement one of primer sequences
-                rev=str(Seq(item[2][3]).reverse_complement())
-                a=pairwise2.align.globalms(rev,item[3][3],2,-1,-1.53,-0.1)
-                # If found sequences are identical, it's a synthesis error
-                if list(a[0][0])==list(a[0][1]):
-                    primersErrors[item[0]][0][3]+=1
-                    # Now we want to save information about error's location
-                    poses,muts=getErrors(primersR2_5[item[0]][1:-1],item[3][3])
-                    for p in poses:
-                        if p not in primersErrorsPos.keys():
-                            primersErrorsPos[p]=1
-                        else:
-                            primersErrorsPos[p]+=1
-                    for m in muts:
-                        if m not in primersErrorsType.keys():
-                            primersErrorsType[m]=1
-                        else:
-                            primersErrorsType[m]+=1
-                # Else it's a sequencing error
                 else:
-                    primersErrors[item[0]][0][2]+=1
-            # Else we just save it as sequencing error
-            else:
-                primersErrors[item[0]][0][2]+=1
-            # R-primers of pairs
-            # For R-primer we always have sequence at least at 5' end of R1
-            if ((not primersFileR2_3 and item[1][0:3]==(0,0,0)) or
-                (primersFileR2_3 and item[1][0:3]==(0,0,0) and item[4][0:3]==(0,0,0))):
-                primersErrors[item[0]][1][1]+=1
-            # If it was overlapping paired-end reads, we try to check if this is sequencing error
-            elif primersFileR1_3 and primersFileR2_5 and primersFileR2_3 and item[4][3]!='' and item[1][3]!='':
-                # Rererse complement one of primer sequences
-                rev=str(Seq(item[4][3]).reverse_complement())
-                a=pairwise2.align.globalms(rev,item[1][3],2,-1,-1.53,-0.1)
-                # If found sequences are identical, it's a synthesis error
-                try:
+                    print('ERROR: item of function result list contains anything')
+                    print(res)
+                    exit(0)
+        print()
+        # primersErrors is a dictionary that contains errors in primers
+        if args.primersStatistics:
+            primersErrors={}
+            # primersErrorsPos is a dictionary that contains statistics about location
+            # of errors
+            primersErrorsPos=[{},{}]
+            # primersErrorsType is a dictionary that contains statistics about type of error
+            primersErrorsType=[{},{}]
+            print('Counting errors...')
+            for item in primerErrorQ:
+                # If key for this primer has not been created, yet
+                if not item[0] in primersErrors.keys():
+                    # For each primer of each pair we will gather the following values:
+                    # [(0)number of read pairs,
+                    # (1)number of primers without errors,
+                    # (2)number of primers with sequencing errors,
+                    # (3)number of primers with synthesis errors
+                    # The first item of list - F
+                    # The second - R
+                    primersErrors[item[0]]=[[0,0,0,0],[0,0,0,0]]
+                    
+    ##          R                           F_reverse_complement
+    ## R1 5'---------________________________---------3'
+    ## R2 5'---------________________________---------3'
+    ##          F                           R_reverse_complement
+                    
+                # Increase number of read pairs
+                primersErrors[item[0]][0][0]+=1
+                primersErrors[item[0]][1][0]+=1
+                # F-primers of pairs
+                # The last variant is a case when we have single-end reads and 3' does not contain primer sequence
+                if ((not primersFileR1_3 and primersFileR2_5 and item[3][0:3]==(0,0,0)) or
+                    (primersFileR1_3 and primersFileR2_5 and item[3][0:3]==(0,0,0) and item[2][0:3]==(0,0,0)) or
+                    (primersFileR1_5 and not primersFileR2_5 and not primersFileR1_3 and not primersFileR2_3)):
+                    primersErrors[item[0]][0][1]+=1
+                # If it was overlapping paired-end reads, we try to check if this is sequencing error
+                elif primersFileR1_3 and primersFileR2_5 and primersFileR2_3 and item[2][3]!='' and item[3][3]!='':
+                    # Reverse complement one of primer sequences
+                    rev=str(Seq(item[2][3]).reverse_complement())
+                    a=pairwise2.align.globalms(rev,item[3][3],2,-1,-1.53,-0.1)
+                    # If found sequences are identical, it's a synthesis error
                     if list(a[0][0])==list(a[0][1]):
-                        primersErrors[item[0]][1][3]+=1
+                        primersErrors[item[0]][0][3]+=1
                         # Now we want to save information about error's location
-                        poses,muts=getErrors(primersR1_5[item[0]][1:-1],item[1][3])
+                        poses,muts=getErrors(primersR2_5[item[0]][1:-1],item[3][3])
                         for p in poses:
-                            if p not in primersErrorsPos.keys():
-                                primersErrorsPos[p]=1
+                            if p not in primersErrorsPos[1].keys():
+                                primersErrorsPos[1][p]=1
                             else:
-                                primersErrorsPos[p]+=1
+                                primersErrorsPos[1][p]+=1
                         for m in muts:
-                            if m not in primersErrorsType.keys():
-                                primersErrorsType[m]=1
+                            if m not in primersErrorsType[1].keys():
+                                primersErrorsType[1][m]=1
                             else:
-                                primersErrorsType[m]+=1
+                                primersErrorsType[1][m]+=1
                     # Else it's a sequencing error
                     else:
-                        primersErrors[item[0]][1][2]+=1
-                except IndexError:
-                    print('IndexError!',a)
-                    print(item)
+                        primersErrors[item[0]][0][2]+=1
+                # Else we just save it as sequencing error
+                else:
+                    primersErrors[item[0]][0][2]+=1
+                # R-primers of pairs
+                # For R-primer we always have sequence at least at 5' end of R1
+                if ((not primersFileR2_3 and item[1][0:3]==(0,0,0)) or
+                    (primersFileR2_3 and item[1][0:3]==(0,0,0) and item[4][0:3]==(0,0,0))):
+                    primersErrors[item[0]][1][1]+=1
+                # If it was overlapping paired-end reads, we try to check if this is sequencing error
+                elif primersFileR1_3 and primersFileR2_5 and primersFileR2_3 and item[4][3]!='' and item[1][3]!='':
+                    # Reverse complement one of primer sequences
+                    rev=str(Seq(item[4][3]).reverse_complement())
+                    a=pairwise2.align.globalms(rev,item[1][3],2,-1,-1.53,-0.1)
+                    # If found sequences are identical, it's a synthesis error
+                    try:
+                        if list(a[0][0])==list(a[0][1]):
+                            primersErrors[item[0]][1][3]+=1
+                            # Now we want to save information about error's location
+                            poses,muts=getErrors(primersR1_5[item[0]][1:-1],item[1][3])
+                            for p in poses:
+                                if p not in primersErrorsPos[0].keys():
+                                    primersErrorsPos[0][p]=1
+                                else:
+                                    primersErrorsPos[0][p]+=1
+                            for m in muts:
+                                if m not in primersErrorsType[0].keys():
+                                    primersErrorsType[0][m]=1
+                                else:
+                                    primersErrorsType[0][m]+=1
+                        # Else it's a sequencing error
+                        else:
+                            primersErrors[item[0]][1][2]+=1
+                    except IndexError:
+                        print('IndexError!',a)
+                        print(item)
+                        exit(0)
+                # Else we just save it as sequencing error
+                else:
+                    primersErrors[item[0]][0][2]+=1
+            primersStatistics.write('Primer\tTotal_number_of_reads\tNumber_without_any_errors\t'
+                                    'Number_with_sequencing_errors\tNumber_with_synthesis_errors\n')
+            for key,item in primersErrors.items():
+                item[0]=list(map(str,item[0]))
+                item[1]=list(map(str,item[1]))
+                primersStatistics.write(str(key+1)+'F\t'+'\t'.join(item[0])+'\n')
+                primersStatistics.write(str(key+1)+'R\t'+'\t'.join(item[1])+'\n')
+            primersStatistics.close()
+
+            primersStatisticsPos.write('\t'.join(['Position_in_primer','Number_of_mutations_in_R1','Number_of_mutations_in_R2'])+'\n')
+            for pos in range(1,max(max(primersErrorsPos[0].keys()),max(primersErrorsPos[1].keys()))+1):
+                line=[str(pos)]
+                if pos in primersErrorsPos[0].keys():
+                    line.append(str(primersErrorsPos[0][pos]))
+                else:
+                    line.append('N/A')
+                if pos in primersErrorsPos[1].keys():
+                    line.append(str(primersErrorsPos[1][pos]))
+                else:
+                    line.append('N/A')
+                primersStatisticsPos.write('\t'.join(line)+'\n')
+            primersStatisticsPos.close()
+
+            primersStatisticsType.write('\t'.join(['Error_type','Number_of_mutations_in_R1','Number_of_mutations_in_R2'])+'\n')
+            for key in set(list(primersErrorsType[0].keys())+list(primersErrorsType[1].keys())):
+                line=[key]
+                if key in primersErrorsType[0].keys():
+                    line.append(str(primersErrorsType[0][key]))
+                else:
+                    line.append('N/A')
+                if key in primersErrorsType[1].keys():
+                    line.append(str(primersErrorsType[1][key]))
+                else:
+                    line.append('N/A')
+                primersStatisticsType.write('\t'.join(line)+'\n')
+            primersStatisticsType.close()
+        if idimer:
+            idimerFile.write('Primer-dimer\tNumber of read pairs\n')
+            for key,item in sorted(primerDimers.items(),key=itemgetter(1),reverse=True):
+                idimerFile.write(key+'\t'+str(item)+'\n')
+            idimerFile.close()
+
+        trimmedReadsR1.close()
+        untrimmedReadsR1.close()
+        if args.trimmedReadsR2:
+            trimmedReadsR2.close()
+            untrimmedReadsR2.close()
+    elif bamFile:
+        print('Reading file with coordinates of amplicons...')
+        coordToPrimerNum={}
+        amplCoords=[]
+        hardClipping=args.hardClipping
+        file=open(coordsFile)
+        primerNum=0
+        for string in file:
+            cols=string.replace('\n','').split('\t')
+            if 'chr' not in cols[0]:
+                cols[0]='chr'+cols[0]
+            if cols[0] not in coordToPrimerNum.keys():
+                coordToPrimerNum[cols[0]]={}
+            for i in range(int(cols[1]),int(cols[2])+1):
+                if i not in coordToPrimerNum[cols[0]].keys():
+                    coordToPrimerNum[cols[0]][i]=[primerNum]
+                else:
+                    coordToPrimerNum[cols[0]][i].append(primerNum)
+            amplCoords.append([cols[0],int(cols[1]),int(cols[2])])
+            primerNum+=1
+        file.close()
+        print('Reading input BAM-file...')
+        if bamFile[-3:]!='.gz':
+            bam=pysam.AlignmentFile(bamFile)
+            outBam=pysam.AlignmentFile(args.outBamFile,'wb',template=bam)
+            if args.outUntrimmedBamFile:
+                outBam2=pysam.AlignmentFile(args.outUntrimmedBamFile,'wb',template=bam)
+            reads=bam.fetch()
+        else:
+            print('ERROR! cutPrimers does not support gzipped BAM-files:',bamFile)
+            exit(0)
+        p=ThreadPool(threads)
+        # Cutting primers and writing result immediately
+        print('Trimming primers from reads of BAM-file...')
+        ### TODO: change position of mate pair read
+        ### TODO: what to do with hard-clipped reads?
+        results=[]
+        # Dictionary that stores positions of each read by read name and its flag value
+        matePositions={}
+        for r in reads:
+##            if r.query_name!='MN00909:4:000H2KVY2:1:22102:14195:2113':
+##                continue
+            results.append(p.apply_async(trimPrimersInBam,args=(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
+                                                                primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
+                                                                primersFileR1_3,primersFileR2_5,primersFileR2_3,primer3absent,minPrimer3Len,minReadLen,hardClipping)))
+        doneWork=0
+        allWork=len(results)
+        showPercWork(0,allWork)
+        newReads=[]
+        for result in results:
+            res=result.get()
+            if res[0]:
+                newReads.append(res[1])
+                if res[1].is_read1:
+                    matePositions[res[1].query_name+'_1']=[res[1].reference_id,res[1].pos]
+                elif res[1].is_read2:
+                    matePositions[res[1].query_name+'_2']=[res[1].reference_id,res[1].pos]
+                else:
+                    matePositions[res[1].query_name+'_0']=[res[1].reference_id,res[1].pos]
+            elif args.outUntrimmedBamFile:
+                try:
+                    outBam2.write(res[1])
+                except TypeError:
+                    print('ERRROR!',res)
                     exit(0)
-            # Else we just save it as sequencing error
-            else:
-                primersErrors[item[0]][0][2]+=1
-        primersStatistics.write('Primer\tTotal_number_of_reads\tNumber_without_any_errors\t'
-                                'Number_with_sequencing_errors\tNumber_with_synthesis_errors\n')
-        for key,item in primersErrors.items():
-            item[0]=list(map(str,item[0]))
-            item[1]=list(map(str,item[1]))
-            primersStatistics.write(str(key+1)+'F\t'+'\t'.join(item[0])+'\n')
-            primersStatistics.write(str(key+1)+'R\t'+'\t'.join(item[1])+'\n')
-        primersStatistics.close()
-
-        primersStatisticsPos.write('Position_in_primer\tNumber_of_mutations\n')
-        for key,item in primersErrorsPos.items():
-            primersStatisticsPos.write(str(key)+'\t'+str(item)+'\n')
-        primersStatisticsPos.close()
-
-        primersStatisticsType.write('Error_type\tNumber_of_mutations\n')
-        for key,item in primersErrorsType.items():
-            primersStatisticsType.write(str(key)+'\t'+str(item)+'\n')
-        primersStatisticsType.close()
-    if idimer:
-        idimerFile.write('Primer-dimer\tNumber of read pairs\n')
-        for key,item in sorted(primerDimers.items(),key=itemgetter(1),reverse=True):
-            idimerFile.write(key+'\t'+str(item)+'\n')
-        idimerFile.close()
-
-    trimmedReadsR1.close()
-    untrimmedReadsR1.close()
-    if args.trimmedReadsR2:
-        trimmedReadsR2.close()
-        untrimmedReadsR2.close()
+                if res[1].is_read1:
+                    matePositions[res[1].query_name+'_1']=[None,None]
+                elif res[1].is_read2:
+                    matePositions[res[1].query_name+'_2']=[None,None]
+                else:
+                    matePositions[res[1].query_name+'_0']=[None,None]
+            doneWork+=1
+            showPercWork(doneWork,allWork)
+        print()
+        p.close()
+        p.join()
+        bam.close()
+        if len(newReads)==0:
+            print('ERROR! No reads left after cutting primer sequences! Possibly, your reads do not have primer sequences on the 3\'-ends. If so, use parameter, -primer3')
+            exit(1)
+        print('Changing coordinates of mates...')
+        p=ThreadPool(threads)
+        results=[]
+        for r in newReads:
+            results.append(p.apply_async(changeMateCoordinates,args=(r,matePositions)))
+        doneWork=0
+        allWork=len(results)
+        showPercWork(0,allWork)
+        for result in results:
+            res=result.get()
+            outBam.write(res)
+            doneWork+=1
+            showPercWork(doneWork,allWork)
+        print()
+        p.close()
+        p.join()
+        outBam.close()
+        print('Sorting output BAM-file...')
+        pysam.sort('-o',args.outBamFile[:-4]+'.sorted.bam',args.outBamFile)
+        if args.outUntrimmedBamFile:
+            outBam2.close()
+            pysam.sort('-o',args.outUntrimmedBamFile[:-4]+'.sorted.bam',args.outUntrimmedBamFile)
+        print('Indexing output BAM-file...')
+        pysam.index(args.outBamFile[:-4]+'.sorted.bam')
+        if args.outUntrimmedBamFile:
+            pysam.index(args.outUntrimmedBamFile[:-4]+'.sorted.bam')
+        
 
 
 

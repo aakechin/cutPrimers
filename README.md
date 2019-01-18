@@ -1,5 +1,5 @@
 # cutPrimers
-curPrimers is a tool for trimming primer sequences from amplicon based NGS reads
+curPrimers is a tool for trimming primer sequences from amplicon based NGS reads. It can trim primer sequences from NGS reads of FASTQ- and BAM-files.
 
 ## Requirements
 ### Linux
@@ -7,6 +7,7 @@ cutPrimers works on the Python3+ and requires the following packages:
 * **Biopython** - you can install it with: `sudo apt-get install python3-biopython` or download it from http://biopython.org/wiki/Download and install it locally with `python3 setup.py install --user`
 * **regex** - you can install it with: `sudo apt-get install python3-regex`  or download it from https://pypi.python.org/pypi/regex/ and install it locally with `python3 setup.py install --user`
 * **argparse** - you can install it with: `sudo pip3 install argparse` or download it from https://pypi.python.org/pypi/argparse and install it locally with `python3 setup.py install --user`
+* **pysam** - you can install it with: `sudo pip3 install pysam` or download it from https://pypi.org/project/pysam/. With pysam you need to install cython.
 
 ### Windows
 For use on windows download and install python3.6 from www.python.org/downloads/ (**Attention! Remember to check "Add Python 3.6 to PATH" in the bottom of the installation window!**). After installation, restart your computer.
@@ -23,6 +24,8 @@ After that install the followong packages with respective commands in command li
 * **Biopython** - with: `pip install biopython`
 * **regex** - you can install it with: `pip install regex`
 * **argparse** - you can install it with: `pip install argparse`
+* **pysam** - you can install it with: `pip install pysam` or download it from https://pypi.org/project/pysam/. With pysam you need to install cython.
+
 
 ## Installation
 cutPrimers does not require any installations
@@ -53,6 +56,12 @@ java -jar trimmomatic-0.32.jar PE example_trimmed/patient_${i}.r1.ad_trimmed.tri
 -h, --help - show this help message and exit
   --readsFile_r1, -r1 - file with R1 reads of one sample
   --readsFile_r2, -r2 - file with R2 reads of one sample
+  --bam-file, -bam - BAM-file in which you want to cut primers from reads
+  --coordinates-file, -coord - file with coordinates of amplicons in the BED-format (without column names and locations of primers): chromosome | start | end. It is necessary for cutting primer sequences from BAM-file. Its order should be the same as for files with primer sequences
+  --out-bam-file, -outbam - name of file for output BAM-file with reads
+  --out-untrimmed-bam-file, -outbam2 - name of file for output BAM-file with untrimmed reads. It is not required. If you do not use this parameter, all untrimmed reads will be lost
+  --minimal-read-length, -minlen - minimal length of read after trimming. Default: 10
+  --hard-clipping, -hard - use this parameter, if you want to trim reads wuith hard clipping. By default, primer sequences are trimmed with soft-clipping
   --primersFileR1_5, -pr15 - fasta-file with sequences of primers on the 5'-end of R1 reads
   --primersFileR2_5, -pr25 - fasta-file with sequences of primers on the 5'-end of R2 reads. Do not use this parameter if you have single-end reads
   --primersFileR1_3, -pr13 - fasta-file with sequences of primers on the 3'-end of R1 reads. It is not required. But if it is determined, -pr23 is necessary
@@ -68,6 +77,7 @@ java -jar trimmomatic-0.32.jar PE example_trimmed/patient_${i}.r1.ad_trimmed.tri
   --primer3-absent, -primer3 - if primer at the 3'-end may be absent, use this parameter
   --identify-dimers IDIMER, -idimer IDIMER - use this parameter if you want to get statistics of homo- and heterodimer formation. Choose file to which statistics of primer-dimers will be written. This parameter may slightly decrease the speed of analysis
   --threads, -t - number of threads
+Parameters for trimming primer sequences from BAM-files are available only for Linux and MacOS users. Only for these OS you can install pysam package.
 ```
 ## Citation
 **cutPrimers: A New Tool for Accurate Cutting of Primers from Reads of Targeted Next Generation Sequencing**. Kechin A, Boyarskikh U, Kel A, Filipenko M, 2017, Journal of Computational Biology, 2017 Jul 17. doi: 10.1089/cmb.2017.0096 (https://www.ncbi.nlm.nih.gov/pubmed/28715235)
