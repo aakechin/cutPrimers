@@ -17,7 +17,7 @@ except ModuleNotFoundError:
     print('WARNING: You do not have pysam module installed. You cannot trim primer sequences from BAM-files!')
     print('Install it or if you use Windows, you can not trim primers from BAM-files at all')
     bamNotAvailable=True
-import glob,gzip,regex,time,argparse,math,hashlib,pysam,re
+import glob,gzip,regex,time,argparse,math,hashlib,re
 from multiprocessing import Pool,Queue
 from multiprocessing.pool import ThreadPool
 from itertools import repeat
@@ -459,6 +459,12 @@ def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumC
     return(primerNumsCovered)
 
 def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,amplBlockEnd=None,hardClipping=False):
+##    if r.qname=='MN00909:8:000H2LNGJ:1:22101:9727:1532':
+##        print(r,start,end,amplBlockChrom,amplBlockStart,amplBlockEnd)
+    if ((start!=None and start<0) or
+        (end!=None and end<0) or
+        (start!=None and end!=None and start>=end)):
+        return(None)
     oldCigar=r.cigar
     cigarStr=''
     amplLen=r.alen
