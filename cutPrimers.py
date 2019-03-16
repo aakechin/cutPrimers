@@ -39,7 +39,7 @@ def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32
     global primersR1_5,primersR1_3,primersR2_5,primersR2_3,primersFileR1_3,primersFileR2_3,primersFileR2_5,readsFileR2
     global trimmedReadsR1,trimmedReadsR2,untrimmedReadsR1,untrimmedReadsR2
     global maxPrimerLen,q4,errNumber,primerLocBuf,readsPrimerNum,primersStatistics
-    global primerR1_5_hashes,primerR2_5_hashes,primerR1_5_hashLens,primerR2_5_hashLens,primer3absent,idimer
+    global primerR1_5_hashes,primerR2_5_hashes,primerR1_5_hashLens,primerR2_5_hashLens,primer3absent,idimer,minPrimer3Len
     maxPrimerLen=maxPrimerLen2
     primerLocBuf=primerLocBuf2
     errNumber=errNumber2
