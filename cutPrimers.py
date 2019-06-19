@@ -247,6 +247,8 @@ def trimPrimers(data):
                 return([[None,None],[r1,r2]],[],False)
         else:
             primerNum2=primerNum
+    else:
+        primerNum2=None
     # Find primer at the 3'-end of R1 read
     if primersFileR1_3:
         if not minPrimer3Len:
