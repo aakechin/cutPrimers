@@ -459,7 +459,7 @@ def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumC
     return(primerNumsCovered)
 
 def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,amplBlockEnd=None,hardClipping=False):
-##    if r.qname=='MN00909:8:000H2LNGJ:1:22101:9727:1532':
+##    if r.qname=='MN00909:11:000H2LN5N:1:21106:23624:3085':
 ##        print(r,start,end,amplBlockChrom,amplBlockStart,amplBlockEnd)
     if ((start!=None and start<0) or
         (end!=None and end<0) or
@@ -582,7 +582,10 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
             newStart=max(start,amplBlockStart-r.pos+startSoftClipped-1)
             newPos=max(newPos,amplBlockStart-1)
             newEnd=min(newEnd,amplBlockEnd-r.pos+startSoftClipped)
-            newCigarStr=clip*newStart+cigarStr[newStart:newEnd]+clip*(len(cigarStr)-newEnd)
+            if newStart>newEnd:
+                newCigarStr=clip*len(cigarStr)
+            else:
+                newCigarStr=clip*newStart+cigarStr[newStart:newEnd]+clip*(len(cigarStr)-newEnd)
             if hardClipping:
                 r.seq=r.seq[newStart:-(len(cigarStr)-newEnd)]
                 r.qual=quals[newStart:-(len(cigarStr)-newEnd)]
@@ -1213,7 +1216,8 @@ if __name__ == "__main__":
                                                                 primersFileR1_3,primersFileR2_5,primersFileR2_3,primer3absent,minPrimer3Len,minReadLen,hardClipping)))
         doneWork=0
         allWork=len(results)
-        showPercWork(0,allWork)
+        if allWork!=0:
+            showPercWork(0,allWork)
         newReads=[]
         for result in results:
             res=result.get()
