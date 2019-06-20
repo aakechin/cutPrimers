@@ -371,14 +371,26 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
     amplBlockEnd=None
     m1,m2,m3,m4=None,None,None,None
     # R1-read
-    if (str(bin(r.flag))[-7]=='1' and str(bin(r.flag))[-5]=='1') or (len(str(bin(r.flag)))>=10 and str(bin(r.flag))[-8]=='1' and str(bin(r.flag))[-6]=='0'):
+    # If this read is R1 and it is reverse complement to reference
+    # or other segment is not reverse complement to reference and it is R2
+##    if ((str(bin(r.flag))[-7]=='1' and
+##         str(bin(r.flag))[-5]=='1') or
+##        (len(str(bin(r.flag)))>=10 and
+##         str(bin(r.flag))[-8]=='1' and
+##         str(bin(r.flag))[-6]=='0')):
+    if str(bin(r.flag))[-7]=='1':
         if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
             primerNum,m1=getPrimerNumFromRead(r,primersR1_5,primerR1_5_hashes,primerR1_5_hashLens,maxPrimerLen,primerLocBuf,readNum=1)
             if primerNum is None:
                 return(None,r)
         else:
             for primerNum,val in sorted(primerNumsCovered.items(),key=itemgetter(1),reverse=True):
-                m1=regex.search(r''+primersR1_5[primerNum]+'{e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                if str(bin(r.flag))[-5]=='1':
+                    m1=regex.search(r''+primersR1_5[primerNum]+'{e<='+errNumber+'}',
+                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                else:
+                    m1=regex.search(r''+primersR1_5[primerNum]+'{e<='+errNumber+'}',
+                                    str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
                 if m1!=None:
                     break
             if m1==None:
@@ -387,30 +399,63 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
         # Find primer at the 3'-end of R1 read
         if primersFileR1_3:
             if not minPrimer3Len:
-                m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                if str(bin(r.flag))[-5]=='1':
+                    m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',
+                                    str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                else:
+                    m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',
+                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
             else:
                 errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum][:-2])))
-                m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                if str(bin(r.flag))[-5]=='1':
+                    m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                    str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                else:
+                    m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
         # If all primers were found
         # Trim sequences of primers and write them to result file
         if m1!=None and primersFileR1_3 and m2!=None:
             # To perform soft clipping we should change cigar value and position
-            newRead=trimCigar(r,m2.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m1.span()[0],amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            if str(bin(r.flag))[-5]=='1':
+                newRead=trimCigar(r,m2.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m1.span()[0],
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            else:
+                newRead=trimCigar(r,m1.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m2.span()[0],
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
         elif m1!=None and ((primersFileR1_3 and primer3absent) or
                            not primersFileR1_3):
-            newRead=trimCigar(r,None,len(r.seq)-maxPrimerLen-primerLocBuf+m1.span()[0],amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            if str(bin(r.flag))[-5]=='1':
+                newRead=trimCigar(r,None,len(r.seq)-maxPrimerLen-primerLocBuf+m1.span()[0],
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            else:
+                newRead=trimCigar(r,m1.span()[1],None,amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
         else:
             return(None,r)
-##            newRead=trimCigar(r,None,None,amplBlockChrom,amplBlockStart,amplBlockEnd)
     # R2-read
-    elif (len(str(bin(r.flag)))>=10 and str(bin(r.flag))[-8]=='1' and str(bin(r.flag))[-6]=='1') or (str(bin(r.flag))[-7]=='1' and str(bin(r.flag))[-5]=='0'):
+    # If other segment is reverse complement to reference and this read is R2
+    # or it is R1 and it is not reverse complement to reference
+##    elif ((len(str(bin(r.flag)))>=10 and
+##           str(bin(r.flag))[-8]=='1' and
+##           str(bin(r.flag))[-6]=='1') or
+##          (str(bin(r.flag))[-7]=='1' and
+##           str(bin(r.flag))[-5]=='0')):
+    elif (len(str(bin(r.flag)))>=10 and
+           str(bin(r.flag))[-8]=='1'):
         if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
             primerNum,m3=getPrimerNumFromRead(r,primersR2_5,primerR2_5_hashes,primerR2_5_hashLens,maxPrimerLen,primerLocBuf,readNum=2)
             if primerNum is None:
                 return(None,r)
         else:
             for primerNum,val in sorted(primerNumsCovered.items(),key=itemgetter(1),reverse=True):
-                m3=regex.search(r''+primersR2_5[primerNum]+'{e<='+errNumber+'}',str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                if str(bin(r.flag))[-5]=='1':
+                    m3=regex.search(r''+primersR2_5[primerNum]+'{e<='+errNumber+'}',
+                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),
+                                    flags=regex.BESTMATCH)
+                else:
+                    m3=regex.search(r''+primersR2_5[primerNum]+'{e<='+errNumber+'}',
+                                    str(r.seq[:maxPrimerLen+primerLocBuf]),
+                                    flags=regex.BESTMATCH)
                 if m3!=None:
                     break
             if m3==None:
@@ -419,18 +464,41 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
         # Find primer at the 3'-end of R2 read
         if primersFileR2_3:
             if not minPrimer3Len:
-                m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                if str(bin(r.flag))[-5]=='1':
+                    m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',
+                                    str(r.seq[:maxPrimerLen+primerLocBuf]),
+                                    flags=regex.BESTMATCH)
+                else:
+                    m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',
+                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),
+                                    flags=regex.BESTMATCH)
             else:
                 errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR2_3[primerNum][:-2])))
-                m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                if str(bin(r.flag))[-5]=='1':
+                    m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                    str(r.seq[:maxPrimerLen+primerLocBuf]),
+                                    flags=regex.BESTMATCH)
+                else:
+                    m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),
+                                    flags=regex.BESTMATCH)
         if m3!=None and primersFileR2_3 and m4!=None:
-            newRead=trimCigar(r,m3.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m4.span()[0],amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            if str(bin(r.flag))[-5]=='1':
+                newRead=trimCigar(r,m4.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m3.span()[0],
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            else:
+                newRead=trimCigar(r,m3.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m4.span()[0],
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
         elif primersFileR2_5 and m3!=None and ((primersFileR2_3 and primer3absent) or
                                                not primersFileR2_3):
-            newRead=trimCigar(r,m3.span()[1],None,amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            if str(bin(r.flag))[-5]=='1':
+                newRead=trimCigar(r,None,len(r.seq)-maxPrimerLen-primerLocBuf+m3.span()[0],
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+            else:
+                newRead=trimCigar(r,m3.span()[1],None,
+                                  amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
         elif primersFileR2_5:
             return(None,r)
-##            newRead=trimCigar(r,None,None,amplBlockChrom,amplBlockStart,amplBlockEnd)
     else:
         return(None,r)
     if newRead:
@@ -461,8 +529,6 @@ def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumC
     return(primerNumsCovered)
 
 def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,amplBlockEnd=None,hardClipping=False):
-##    if r.qname=='MN00909:11:000H2LN5N:1:21106:23624:3085':
-##        print(r,start,end,amplBlockChrom,amplBlockStart,amplBlockEnd)
     if ((start!=None and start<0) or
         (end!=None and end<0) or
         (start!=None and end!=None and start>=end)):
@@ -481,8 +547,6 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
     else:
         newPos=r.pos
     if not amplBlockStart or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
-##        if not start and not end and (not amplBlockEnd or amplBlockChrom!=r.reference_name or
-##                                      r.pos+amplLen/2<amplBlockStart or r.pos>amplBlockEnd):
         return(None)
         amplBlockStart=-1
     if not amplBlockEnd or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
@@ -666,7 +730,7 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
                 r.seq=r.seq[:-(len(cigarStr)-newEnd)]
                 r.qual=quals[:-(len(cigarStr)-newEnd)]
     newCigar=[]
-    if len(newCigarStr)==0:
+    if len(newCigarStr)==0 or set(newCigarStr)==set(['4']):
         return(None)
     while(len(newCigarStr)>0):
         p=re.compile(newCigarStr[0]+'+')
@@ -720,6 +784,9 @@ if __name__ == "__main__":
     par.add_argument('--primersFileR2_5','-pr25',dest='primersFileR2_5',type=str,help='fasta-file with sequences of primers on the 5\'-end of R2 reads. Do not use this parameter if you have single-end reads',required=False)
     par.add_argument('--primersFileR1_3','-pr13',dest='primersFileR1_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R1 reads. It is not required. But if it is determined, -pr23 is necessary',required=False)
     par.add_argument('--primersFileR2_3','-pr23',dest='primersFileR2_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R2 reads',required=False)
+    par.add_argument('--reads-with-forward','-freads',dest='forwardReadsNum',type=int,
+                     help='number of file with reads that contain forward-primers (1 or 2). Default: 2',
+                     default=2)
     par.add_argument('--trimmedReadsR1','-tr1',dest='trimmedReadsR1',type=str,help='name of file for trimmed R1 reads',required=False)
     par.add_argument('--trimmedReadsR2','-tr2',dest='trimmedReadsR2',type=str,help='name of file for trimmed R2 reads',required=False)
     par.add_argument('--untrimmedReadsR1','-utr1',dest='untrimmedReadsR1',type=str,help='name of file for untrimmed R1 reads. If you want to write reads that has not been trimmed to the same file as trimmed reads, type the same name',required=False)
@@ -856,7 +923,7 @@ if __name__ == "__main__":
     try:
         for r in SeqIO.parse(primersFileR1_5,'fasta'):
             primersR1_5_names.append(r.name)
-            if bamFile:
+            if bamFile and args.forwardReadsNum==2:
                 primerSeq=str(r.seq.reverse_complement())
             else:
                 primerSeq=str(r.seq)
@@ -885,10 +952,10 @@ if __name__ == "__main__":
         try:
             for r in SeqIO.parse(primersFileR2_5,'fasta'):
                 primersR2_5_names.append(r.name)
-##                if bamFile:
-##                    primerSeq=str(r.seq.reverse_complement())
-##                else:
-                primerSeq=str(r.seq)
+                if bamFile and args.forwardReadsNum==1:
+                    primerSeq=str(r.seq.reverse_complement())
+                else:
+                    primerSeq=str(r.seq)
                 primersR2_5.append('('+ambToRegList(primerSeq)+')')
                 partLens=math.floor(len(primerSeq)/(int(errNumber)+1))
                 hashes,lens=makeHashes(primerSeq,partLens)
@@ -915,7 +982,7 @@ if __name__ == "__main__":
         try:
             for r in SeqIO.parse(primersFileR1_3,'fasta'):
                 primersR1_3_names.append(r.name)
-                if bamFile:
+                if bamFile and args.forwardReadsNum==2:
                     primerSeq=str(r.seq.reverse_complement())
                 else:
                     primerSeq=str(r.seq)
@@ -936,7 +1003,10 @@ if __name__ == "__main__":
         try:
             for r in SeqIO.parse(primersFileR2_3,'fasta'):
                 primersR2_3_names.append(r.name)
-                primerSeq=str(r.seq)
+                if bamFile and args.forwardReadsNum==1:
+                    primerSeq=str(r.seq.reverse_complement())
+                else:
+                    primerSeq=str(r.seq)
                 primersR2_3.append('('+ambToRegList(primerSeq)+')')
                 if len(r.seq)>maxPrimerLen:
                     maxPrimerLen=len(r.seq)
