@@ -6,6 +6,7 @@
 #       added ability to trim degenerate primers        
 
 # Section of importing modules
+import os
 import sys
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -1320,34 +1321,35 @@ if __name__ == "__main__":
         p.join()
         bam.close()
         if len(newReads)==0:
-            print('ERROR! No reads left after cutting primer sequences! Possibly, your reads do not have primer sequences on the 3\'-ends. If so, use parameter, -primer3')
-            exit(1)
-        print('Changing coordinates of mates...')
-        p=ThreadPool(threads)
-        results=[]
-        for r in newReads:
-            results.append(p.apply_async(changeMateCoordinates,args=(r,matePositions)))
-        doneWork=0
-        allWork=len(results)
-        showPercWork(0,allWork)
-        for result in results:
-            res=result.get()
-            outBam.write(res)
-            doneWork+=1
-            showPercWork(doneWork,allWork)
-        print()
-        p.close()
-        p.join()
-        outBam.close()
-        print('Sorting output BAM-file...')
-        pysam.sort('-o',args.outBamFile[:-4]+'.sorted.bam',args.outBamFile)
-        if args.outUntrimmedBamFile:
-            outBam2.close()
-            pysam.sort('-o',args.outUntrimmedBamFile[:-4]+'.sorted.bam',args.outUntrimmedBamFile)
-        print('Indexing output BAM-file...')
-        pysam.index(args.outBamFile[:-4]+'.sorted.bam')
-        if args.outUntrimmedBamFile:
-            pysam.index(args.outUntrimmedBamFile[:-4]+'.sorted.bam')
+            print('WARNING! No reads left after cutting primer sequences! Possibly, your reads do not have primer sequences on the 3\'-ends. If so, use parameter, -primer3')
+            os.rename(args.outBamFile,args.outBamFile[:-4]+'.sorted.bam')
+        else:
+            print('Changing coordinates of mates...')
+            p=ThreadPool(threads)
+            results=[]
+            for r in newReads:
+                results.append(p.apply_async(changeMateCoordinates,args=(r,matePositions)))
+            doneWork=0
+            allWork=len(results)
+            showPercWork(0,allWork)
+            for result in results:
+                res=result.get()
+                outBam.write(res)
+                doneWork+=1
+                showPercWork(doneWork,allWork)
+            print()
+            p.close()
+            p.join()
+            outBam.close()
+            print('Sorting output BAM-file...')
+            pysam.sort('-o',args.outBamFile[:-4]+'.sorted.bam',args.outBamFile)
+            if args.outUntrimmedBamFile:
+                outBam2.close()
+                pysam.sort('-o',args.outUntrimmedBamFile[:-4]+'.sorted.bam',args.outUntrimmedBamFile)
+            print('Indexing output BAM-file...')
+            pysam.index(args.outBamFile[:-4]+'.sorted.bam')
+            if args.outUntrimmedBamFile:
+                pysam.index(args.outUntrimmedBamFile[:-4]+'.sorted.bam')
         
 
 
