@@ -529,10 +529,20 @@ def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumC
                 primerNumsCovered[primerNum]+=1
     return(primerNumsCovered)
 
-def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,amplBlockEnd=None,hardClipping=False):
+def trimCigar(r,start=None,end=None,
+              amplBlockChrom=None,
+              amplBlockStart=None,amplBlockEnd=None,
+              hardClipping=False):
+    debug=None
+##    debug='MN00909:41:000H2LNCW:1:21102:19422:4672'
     if ((start!=None and start<0) or
         (end!=None and end<0) or
         (start!=None and end!=None and start>=end)):
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, start<0 or end<0 or start>=end')
+##            print('Start:',start,'End:',end)
         return(None)
     oldCigar=r.cigar
     cigarStr=''
@@ -548,9 +558,23 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
     else:
         newPos=r.pos
     if not amplBlockStart or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, amplBlockStart was not determined, amplBlockChrom!=reference name, '
+##                  'r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd')
+##            print('amplBlockStart:',amplBlockStart,'amplBlockChrom:',amplBlockChrom,'amplBlockEnd:',amplBlockEnd)
+##            print('reference name:',r.reference_name,'r.pos:',r.pos,'r.alen:',r.alen)
         return(None)
         amplBlockStart=-1
     if not amplBlockEnd or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, amplBlockEnd was not determined, amplBlockChrom!=reference name, '
+##                  'r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd')
+##            print('amplBlockStart:',amplBlockStart,'amplBlockChrom:',amplBlockChrom,'amplBlockEnd:',amplBlockEnd)
+##            print('reference name:',r.reference_name,'r.pos:',r.pos,'r.alen:',r.alen)
         return(None)
         amplBlockEnd=10000000000
     for cig in oldCigar:
@@ -561,11 +585,23 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
     startSoftClipped=0
     try:
         if cigarStr[0]=='4' and (start or r.pos<amplBlockStart):
+##            if debug!=None and r.qname==debug:
+##                print('DEBUG INFO:')
+##                print(r.qname)
+##                print('For this read before shifting, cigarStr[0]==4 and (start or r.pos<amplBlockStart)')
+##                print('cigarStr:',cigarStr,'start:',start,'r.pos:',r.pos,'amplBlockStart:',amplBlockStart)
+##                print('startSoftClipped:',startSoftClipped,'newPos:',newPos,'amplLen:',amplLen)
             p=re.compile(cigarStr[0]+'+')
             m=p.findall(cigarStr)
             startSoftClipped=len(m[0])
             newPos-=len(m[0])
             amplLen+=len(m[0])
+##            if debug!=None and r.qname==debug:
+##                print('DEBUG INFO:')
+##                print(r.qname)
+##                print('For this read after shifting, cigarStr[0]==4 and (start or r.pos<amplBlockStart)')
+##                print('cigarStr:',cigarStr,'start:',start,'r.pos:',r.pos,'amplBlockStart:',amplBlockStart)
+##                print('startSoftClipped:',startSoftClipped,'newPos:',newPos,'amplLen:',amplLen)
     except IndexError:
         print('ERROR:',oldCigar)
         print(r)
@@ -574,9 +610,19 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
     endSoftClipped=0
     try:
         if cigarStr[-1]=='4' and (end or r.pos+r.alen>amplBlockEnd):
+##            if debug!=None and r.qname==debug:
+##                print('DEBUG INFO:')
+##                print(r.qname)
+##                print('For this read before shifting, cigarStr[-1]==4 and (end or r.pos+r.alen>amplBlockEnd)')
+##                print('cigarStr:',cigarStr)
             p=re.compile(cigarStr[-1]+'+')
             m=p.findall(cigarStr)
             endSoftClipped=len(r.seq)-len(m[-1])
+##            if debug!=None and r.qname==debug:
+##                print('DEBUG INFO:')
+##                print(r.qname)
+##                print('For this read after shifting, cigarStr[-1]==4 and (end or r.pos+r.alen>amplBlockEnd)')
+##                print('cigarStr:',cigarStr,'endSoftClipped',endSoftClipped)
     except IndexError:
         print('ERROR:',oldCigar)
         print(r)
@@ -587,12 +633,27 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
         (start==None or start<startSoftClipped)):
         start=None
         newPos=r.pos
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, amplBlockChrom==r.reference_name and r.pos>=amplBlockStart and (start==None or start<startSoftClipped)')
+##            print('start:',start,'newPos',newPos)
     if (amplBlockChrom==r.reference_name and
         r.pos+r.alen<=amplBlockEnd and
         (end==None or end<endSoftClipped)):
         end=None
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, amplBlockChrom==r.reference_name and r.pos+r.alen<=amplBlockEnd and (end==None or end<endSoftClipped)')
+##            print('end:',end)
     newCigarStr=''
     if (start or newPos<amplBlockStart-1) and (end or newPos+amplLen>amplBlockEnd):
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, (start or newPos<amplBlockStart-1) and (end or newPos+amplLen>amplBlockEnd)')
+##            print('start:',start,'end:',end,'newPos:',newPos,'amplLen:',amplLen,'amplBlockStart:',amplBlockStart,'amplBlockEnd:',amplBlockEnd)
         # We should consider deletions. We do not take them into account, while determining how we should trim cigar
         if not start:
             start=0
@@ -604,6 +665,11 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
         startReady=False
         endReady=False
         if '2' in cigarStr or '1' in cigarStr:
+##            if debug!=None and r.qname==debug:
+##                print('DEBUG INFO:')
+##                print(r.qname)
+##                print('For this read, 2 in cigarStr or 1 in cigarStr')
+##                print('cigarStr:',cigarStr)
             # Number of soft-clipped nucleotides before newStart
             ## It can differ due to deletions
             startSoftClippedNum=newStart
@@ -615,14 +681,32 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
                     if j<newStart:
                         # If there is deletion before end of primer
                         if cigarStr[j]=='2':
+##                            if debug!=None and r.qname==debug:
+##                                print('DEBUG INFO:')
+##                                print(r.qname)
+##                                print('For this read, when:')
+##                                print('j:',j,'newStart:',newStart,'cigarStr[j]==2')
+##                                print('newPos+=1','newStart+=1')
                             newPos+=1
                             newStart+=1
                         # If there is an insertion before end of primer
                         elif cigarStr[j]=='1':
+##                            if debug!=None and r.qname==debug:
+##                                print('DEBUG INFO:')
+##                                print(r.qname)
+##                                print('For this read, when:')
+##                                print('j:',j,'newStart:',newStart,'cigarStr[j]==1')
+##                                print('newPos-=1')
                             newPos-=1
                     # If primer sequence was removed, but read is wider than amplicon
                     ## -1 because when we read BAM-file with pysam, all positions starts from 0
                     elif newPos<amplBlockStart-1:
+##                        if debug!=None and r.qname==debug:
+##                            print('DEBUG INFO:')
+##                            print(r.qname)
+##                            print('For this read, when:')
+##                            print('j:',j,'newStart:',newStart,'newPos<amplBlockStart-1')
+##                            print('cigarStr[j]',cigarStr[j])
                         # Increase number of soft clipped nucleotides in all cases, except for deletions
                         if cigarStr[j]!='2':
                             startSoftClippedNum+=1
@@ -659,6 +743,11 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
             if startReady or endReady:
                 print(startSoftClippedNum,endSoftClippedNum)
     elif (start or newPos<amplBlockStart-1):
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, (start or newPos<amplBlockStart-1)')
+##            print('start:',start,'end:',end,'newPos:',newPos,'amplLen:',amplLen,'amplBlockStart:',amplBlockStart,'amplBlockEnd:',amplBlockEnd)
         # We should consider deletions. We do not take them into account, while determining how we should trim cigar
         if not start:
             start=0
@@ -668,28 +757,58 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
         ## It can differ due to deletions
         startSoftClippedNum=newStart
         if '2' in cigarStr or '1' in cigarStr:
+##            if debug!=None and r.qname==debug:
+##                print('DEBUG INFO:')
+##                print(r.qname)
+##                print('For this read, 2 in cigarStr or 1 in cigarStr')
+##                print('cigarStr:',cigarStr)
             for j in range(len(cigarStr)):
                 if j>=newStart and newPos>=amplBlockStart-1:
                     break
                 if j<newStart:
                     # If there is deletion before end of primer
                     if cigarStr[j]=='2':
+##                        if debug!=None and r.qname==debug:
+##                            print('DEBUG INFO:')
+##                            print(r.qname)
+##                            print('For this read, when:')
+##                            print('j:',j,'newStart:',newStart,'newPos:',newPos)
+##                            print('cigarStr[j]==2')
+##                            print('newPos+=1','newStart+=1')
                         newPos+=1
                         newStart+=1
                     # If there is an insertion before end of primer
                     elif cigarStr[j]=='1':
+##                        if debug!=None and r.qname==debug:
+##                            print('DEBUG INFO:')
+##                            print(r.qname)
+##                            print('For this read, when:')
+##                            print('j:',j,'newStart:',newStart,'newPos:',newPos)
+##                            print('cigarStr[j]==1')
+##                            print('newPos-=1')
                         newPos-=1
                 # If primer sequence was removed, but read is wider than amplicon
                 ## -1 because when we read BAM-file with pysam, all positions starts from 0
                 elif newPos<amplBlockStart-1:
+##                    if debug!=None and r.qname==debug:
+##                        print('DEBUG INFO:')
+##                        print(r.qname)
+##                        print('For this read, when:')
+##                        print('j:',j,'newStart:',newStart,'newPos:',newPos)
+##                        print('newPos<amplBlockStart-1')
+##                        print('cigarStr[j]',cigarStr[j])
                     # Increase number of soft clipped nucleotides in all cases, except for deletions
                     if cigarStr[j]!='2':
                         startSoftClippedNum+=1
                     # Increase position in all cases, except for insertions
                     if cigarStr[j]!='1':
                         newPos+=1
-                    newPos+=1
                     newStart+=1
+##                    if debug!=None and r.qname==debug:
+##                        print('DEBUG INFO:')
+##                        print(r.qname)
+##                        print('For this read, after all increases:')
+##                        print('j:',j,'newStart:',newStart,'newPos:',newPos,'cigarStr[j]',cigarStr[j])
             newCigarStr=clip*startSoftClippedNum+cigarStr[newStart:]
             if hardClipping:
                 r.seq=r.seq[startSoftClippedNum:]
@@ -702,6 +821,11 @@ def trimCigar(r,start=None,end=None,amplBlockChrom=None,amplBlockStart=None,ampl
                 r.seq=r.seq[newStart:]
                 r.qual=quals[newStart:]
     elif (end or newPos+amplLen>amplBlockEnd):
+##        if debug!=None and r.qname==debug:
+##            print('DEBUG INFO:')
+##            print(r.qname)
+##            print('For this read, (end or newPos+amplLen>amplBlockEnd)')
+##            print('start:',start,'end:',end,'newPos:',newPos,'amplLen:',amplLen,'amplBlockStart:',amplBlockStart,'amplBlockEnd:',amplBlockEnd)
         # We should consider deletions. We do not count them when determine, how we should trim cigar
         delAfterEnd=0
         if not end:
