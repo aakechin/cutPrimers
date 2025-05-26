@@ -34,7 +34,7 @@ def makeHashes(seq,k):
     return(h,lens)
 
 def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32,primersR2_52,primersR2_32,
-                primerR1_5_hashes2,primerR1_5_hashLens2,primerR2_5_hashes2,primerR2_5_hashLens2,
+                primerToPrimers2,primerSeqs2,primerR1_5_hashes2,primerR1_5_hashLens2,primerR2_5_hashes2,primerR2_5_hashLens2,
                 primersFileR1_32,primersFileR2_52,primersFileR2_32,readsFileR22,primersStatistics2,
                 idimer2,primer3absent2,minPrimer3Len2):
     global primersR1_5,primersR1_3,primersR2_5,primersR2_3,primersFileR1_3,primersFileR2_3,primersFileR2_5,readsFileR2
@@ -48,6 +48,8 @@ def initializer(maxPrimerLen2,primerLocBuf2,errNumber2,primersR1_52,primersR1_32
     primersR1_3=primersR1_32
     primersR2_5=primersR2_52
     primersR2_3=primersR2_32
+    primerToPrimers=primerToPrimers2
+    primerSeqs=primerSeqs2
     primerR1_5_hashes=primerR1_5_hashes2; primerR1_5_hashLens=primerR1_5_hashLens2;
     primerR2_5_hashes=primerR2_5_hashes2; primerR2_5_hashLens=primerR2_5_hashLens2
     primersFileR1_3=primersFileR1_32
@@ -177,7 +179,6 @@ def trimPrimers(data):
         m1=regex.search(r''+primersR1_5[bestPrimer]+'{e<='+errNumber+'}',str(r1.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
     else:
         return([[None,None],[r1,r2]],[],False)
-##    m1=regex.search(r'(?:'+'|'.join(primersR1_5)+'){e<='+errNumber+'}',str(r1.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
     # Use result of searching 5'-primer
     if m1==None:
         if len(goodPrimers)>0:
@@ -193,7 +194,10 @@ def trimPrimers(data):
         primerNum=bestPrimer
     # Find primer at the 5'-end of R2 read
     if primersFileR2_5:
-        m3=regex.search(r'(?:'+primersR2_5[primerNum]+'){e<='+errNumber+'}',str(r2.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+        for primerNum2 in primerToPrimers[primerSeqs[primerNum]]:
+            m3=regex.search(r'(?:'+primersR2_5[primerNum2]+'){e<='+errNumber+'}',str(r2.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+            if m3!=None:
+                break
         if m3==None:
             # If user wants to identify hetero- and homodimers of primers
             if idimer:
@@ -226,7 +230,6 @@ def trimPrimers(data):
                     m3=regex.search(r''+primersR2_5[bestPrimer]+'{e<='+errNumber+'}',str(r2.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
                 else:
                     return([[None,None],[r1,r2]],[],False)
-##                    m3=regex.search(r'(?:'+'|'.join(primersR2_5)+'){e<='+errNumber+'}',str(r2.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
                 # Use result of searching 5'-primer
                 if m3==None:
                     if len(goodPrimers)>0:
@@ -246,17 +249,15 @@ def trimPrimers(data):
             else:
                 # Save this pair of reads to untrimmed sequences
                 return([[None,None],[r1,r2]],[],False)
-        else:
-            primerNum2=primerNum
     else:
         primerNum2=None
     # Find primer at the 3'-end of R1 read
     if primersFileR1_3:
         if not minPrimer3Len:
-            m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+            m2=regex.search(r'(?:'+primersR1_3[primerNum2]+'){e<='+errNumber+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
         else:
-            errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum][:-2])))
-            m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+            errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum2][:-2])))
+            m2=regex.search(r'(?:'+primersR1_3[primerNum2][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',str(r1.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
         if not primer3absent and m2==None:
             # Save this pair of reads to untrimmed sequences
             return([[None,None],[r1,r2]],[],[primerNum,primerNum2])
@@ -290,12 +291,18 @@ def trimPrimers(data):
     # Each dif is a set of (# of mismatches,# of insertions,# of deletions,primer_seq)
     if primersStatistics:
         difs1=countDifs(m1[0],primersR1_5[primerNum][1:-1])
-        if primersFileR1_3 and m2!=None: difs2=countDifs(m2[0],primersR1_3[primerNum][1:-1])
-        else: difs2=(0,0,0,'')
-        if primersFileR2_5: difs3=countDifs(m3[0],primersR2_5[primerNum][1:-1])
-        else: difs3=(0,0,0,'')
-        if primersFileR2_3 and m4!=None: difs4=countDifs(m4[0],primersR2_3[primerNum][1:-1])
-        else: difs4=(0,0,0,'')
+        if primersFileR1_3 and m2!=None:
+            difs2=countDifs(m2[0],primersR1_3[primerNum][1:-1])
+        else:
+            difs2=(0,0,0,'')
+        if primersFileR2_5:
+            difs3=countDifs(m3[0],primersR2_5[primerNum][1:-1])
+        else:
+            difs3=(0,0,0,'')
+        if primersFileR2_3 and m4!=None:
+            difs4=countDifs(m4[0],primersR2_3[primerNum][1:-1])
+        else:
+            difs4=(0,0,0,'')
         return (resList,[primerNum,difs1,difs2,difs3,difs4],False)
     else:
         return (resList,[],False)
@@ -330,7 +337,8 @@ def getPrimerNumFromRead(r,primersR1_5,primerR1_5_hashes,primerR1_5_hashLens,max
         if item>=bestPrimerValue-1:
             goodPrimers.append(primersR1_5[key])
             goodPrimerNums.append(key)
-        else: break
+        else:
+            break
     if bestPrimer!=None:
         if readNum==1:
             m1=regex.search(r''+primersR1_5[bestPrimer]+'{e<='+errNumber+'}',str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
@@ -357,7 +365,7 @@ def getPrimerNumFromRead(r,primersR1_5,primerR1_5_hashes,primerR1_5_hashLens,max
     return(primerNum,m1)
 
 def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
-                     primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
+                     primerToPrimers,primerSeqs,primerToPrimersR2,primerSeqsR2,primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
                      primersFileR1_3,primersFileR2_5,primersFileR2_3,primer3absent,minPrimer3Len,minReadLen,hardClipping):
     # This function get aligned read from BAM-file
     # As a result it returns read with newered information
@@ -374,46 +382,53 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
     # R1-read
     # If this read is R1 and it is reverse complement to reference
     # or other segment is not reverse complement to reference and it is R2
-##    if ((str(bin(r.flag))[-7]=='1' and
-##         str(bin(r.flag))[-5]=='1') or
-##        (len(str(bin(r.flag)))>=10 and
-##         str(bin(r.flag))[-8]=='1' and
-##         str(bin(r.flag))[-6]=='0')):
     if str(bin(r.flag))[-7]=='1':
         if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
             primerNum,m1=getPrimerNumFromRead(r,primersR1_5,primerR1_5_hashes,primerR1_5_hashLens,maxPrimerLen,primerLocBuf,readNum=1)
             if primerNum is None:
                 return(None,r)
+            bestPrimerNum=primerNum
         else:
-            for primerNum,val in sorted(primerNumsCovered.items(),key=itemgetter(1),reverse=True):
+            bestPrimerNum=None
+            for primerNum,val in sorted(primerNumsCovered.items(),
+                                        key=itemgetter(1),
+                                        reverse=True):
+                if val<minReadLen:
+                    break
                 if str(bin(r.flag))[-5]=='1':
                     m1=regex.search(r''+primersR1_5[primerNum]+'{e<='+errNumber+'}',
                                     str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
                 else:
                     m1=regex.search(r''+primersR1_5[primerNum]+'{e<='+errNumber+'}',
                                     str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                if (bestPrimerNum==None and
+                    m1!=None):
+                    bestPrimerNum=primerNum
                 if m1!=None:
                     break
-            if m1==None:
-                return(None,r)
-        amplBlockChrom,amplBlockStart,amplBlockEnd=amplCoords[primerNum]
+        if bestPrimerNum==None:
+            return(None,r)
+        amplBlockChrom,amplBlockStart,amplBlockEnd=amplCoords[bestPrimerNum]
         # Find primer at the 3'-end of R1 read
         if primersFileR1_3:
-            if not minPrimer3Len:
-                if str(bin(r.flag))[-5]=='1':
-                    m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',
-                                    str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+            for primerNum2 in primerToPrimers[primerSeqs[bestPrimerNum]]:                
+                if not minPrimer3Len:
+                    if str(bin(r.flag))[-5]=='1':
+                        m2=regex.search(r'(?:'+primersR1_3[primerNum2]+'){e<='+errNumber+'}',
+                                        str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                    else:
+                        m2=regex.search(r'(?:'+primersR1_3[primerNum2]+'){e<='+errNumber+'}',
+                                        str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
                 else:
-                    m2=regex.search(r'(?:'+primersR1_3[primerNum]+'){e<='+errNumber+'}',
-                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
-            else:
-                errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum][:-2])))
-                if str(bin(r.flag))[-5]=='1':
-                    m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
-                                    str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
-                else:
-                    m2=regex.search(r'(?:'+primersR1_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
-                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                    errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR1_3[primerNum2][:-2])))
+                    if str(bin(r.flag))[-5]=='1':
+                        m2=regex.search(r'(?:'+primersR1_3[primerNum2][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                        str(r.seq[:maxPrimerLen+primerLocBuf]),flags=regex.BESTMATCH)
+                    else:
+                        m2=regex.search(r'(?:'+primersR1_3[primerNum2][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                        str(r.seq[-maxPrimerLen-primerLocBuf:]),flags=regex.BESTMATCH)
+                if m2!=None:
+                    break
         # If all primers were found
         # Trim sequences of primers and write them to result file
         if m1!=None and primersFileR1_3 and m2!=None:
@@ -431,24 +446,26 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
                                   amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
             else:
                 newRead=trimCigar(r,m1.span()[1],None,amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+        elif (primer3absent or
+              not primersFileR1_3):
+            newRead=trimCigar(r,None,None,amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
         else:
             return(None,r)
     # R2-read
     # If other segment is reverse complement to reference and this read is R2
     # or it is R1 and it is not reverse complement to reference
-##    elif ((len(str(bin(r.flag)))>=10 and
-##           str(bin(r.flag))[-8]=='1' and
-##           str(bin(r.flag))[-6]=='1') or
-##          (str(bin(r.flag))[-7]=='1' and
-##           str(bin(r.flag))[-5]=='0')):
     elif (len(str(bin(r.flag)))>=10 and
            str(bin(r.flag))[-8]=='1'):
         if chrom not in coordToPrimerNum.keys() or len(primerNumsCovered)==0:
             primerNum,m3=getPrimerNumFromRead(r,primersR2_5,primerR2_5_hashes,primerR2_5_hashLens,maxPrimerLen,primerLocBuf,readNum=2)
             if primerNum is None:
                 return(None,r)
+            bestPrimerNum=primerNum
         else:
+            bestPrimerNum=None
             for primerNum,val in sorted(primerNumsCovered.items(),key=itemgetter(1),reverse=True):
+                if val<minReadLen:
+                    break
                 if str(bin(r.flag))[-5]=='1':
                     m3=regex.search(r''+primersR2_5[primerNum]+'{e<='+errNumber+'}',
                                     str(r.seq[-maxPrimerLen-primerLocBuf:]),
@@ -457,32 +474,38 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
                     m3=regex.search(r''+primersR2_5[primerNum]+'{e<='+errNumber+'}',
                                     str(r.seq[:maxPrimerLen+primerLocBuf]),
                                     flags=regex.BESTMATCH)
+                if (bestPrimerNum==None and
+                    m3!=None):
+                    bestPrimerNum=primerNum
                 if m3!=None:
                     break
-            if m3==None:
-                return(None,r)
-        amplBlockChrom,amplBlockStart,amplBlockEnd=amplCoords[primerNum]
+        if bestPrimerNum==None:
+            return(None,r)
+        amplBlockChrom,amplBlockStart,amplBlockEnd=amplCoords[bestPrimerNum]
         # Find primer at the 3'-end of R2 read
         if primersFileR2_3:
-            if not minPrimer3Len:
-                if str(bin(r.flag))[-5]=='1':
-                    m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',
-                                    str(r.seq[:maxPrimerLen+primerLocBuf]),
-                                    flags=regex.BESTMATCH)
+            for primerNum2 in primerToPrimersR2[primerSeqsR2[bestPrimerNum]]:
+                if not minPrimer3Len:
+                    if str(bin(r.flag))[-5]=='1':
+                        m4=regex.search(r'(?:'+primersR2_3[primerNum2]+'){e<='+errNumber+'}',
+                                        str(r.seq[:maxPrimerLen+primerLocBuf]),
+                                        flags=regex.BESTMATCH)
+                    else:
+                        m4=regex.search(r'(?:'+primersR2_3[primerNum2]+'){e<='+errNumber+'}',
+                                        str(r.seq[-maxPrimerLen-primerLocBuf:]),
+                                        flags=regex.BESTMATCH)
                 else:
-                    m4=regex.search(r'(?:'+primersR2_3[primerNum]+'){e<='+errNumber+'}',
-                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),
-                                    flags=regex.BESTMATCH)
-            else:
-                errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR2_3[primerNum][:-2])))
-                if str(bin(r.flag))[-5]=='1':
-                    m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
-                                    str(r.seq[:maxPrimerLen+primerLocBuf]),
-                                    flags=regex.BESTMATCH)
-                else:
-                    m4=regex.search(r'(?:'+primersR2_3[primerNum][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
-                                    str(r.seq[-maxPrimerLen-primerLocBuf:]),
-                                    flags=regex.BESTMATCH)
+                    errNumberDescreased=int(round(int(errNumber)*minPrimer3Len/len(primersR2_3[primerNum][:-2])))
+                    if str(bin(r.flag))[-5]=='1':
+                        m4=regex.search(r'(?:'+primersR2_3[primerNum2][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                        str(r.seq[:maxPrimerLen+primerLocBuf]),
+                                        flags=regex.BESTMATCH)
+                    else:
+                        m4=regex.search(r'(?:'+primersR2_3[primerNum2][:minPrimer3Len]+')){e<='+str(errNumberDescreased)+'}',
+                                        str(r.seq[-maxPrimerLen-primerLocBuf:]),
+                                        flags=regex.BESTMATCH)
+                if m4!=None:
+                    break
         if m3!=None and primersFileR2_3 and m4!=None:
             if str(bin(r.flag))[-5]=='1':
                 newRead=trimCigar(r,m4.span()[1],len(r.seq)-maxPrimerLen-primerLocBuf+m3.span()[0],
@@ -498,19 +521,22 @@ def trimPrimersInBam(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,err
             else:
                 newRead=trimCigar(r,m3.span()[1],None,
                                   amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
-        elif primersFileR2_5:
+        elif (primer3absent or
+              not primersFileR1_3):
+            newRead=trimCigar(r,None,None,
+                              amplBlockChrom,amplBlockStart,amplBlockEnd,hardClipping)
+        else:
             return(None,r)
     else:
         return(None,r)
     if newRead:
         if newRead.alen<minReadLen:
-            return(None,r) 
+            return(None,r)
         return(True,newRead)
     else:
         return(None,r)        
 
 def getTheMostFitPrimerNumByPos(readStart,readLen,maxPrimerLen,coordToPrimerNumChrom):
-##    poses=[]
     primerNumsCovered={}
     for pos in range(readStart+maxPrimerLen,readStart+readLen+1):
 ##    # Check the first base after maximal length of primer + position of read
@@ -534,15 +560,9 @@ def trimCigar(r,start=None,end=None,
               amplBlockStart=None,amplBlockEnd=None,
               hardClipping=False):
     debug=None
-##    debug='MN00909:41:000H2LNCW:1:21102:19422:4672'
     if ((start!=None and start<0) or
         (end!=None and end<0) or
         (start!=None and end!=None and start>=end)):
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, start<0 or end<0 or start>=end')
-##            print('Start:',start,'End:',end)
         return(None)
     oldCigar=r.cigar
     cigarStr=''
@@ -558,23 +578,9 @@ def trimCigar(r,start=None,end=None,
     else:
         newPos=r.pos
     if not amplBlockStart or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, amplBlockStart was not determined, amplBlockChrom!=reference name, '
-##                  'r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd')
-##            print('amplBlockStart:',amplBlockStart,'amplBlockChrom:',amplBlockChrom,'amplBlockEnd:',amplBlockEnd)
-##            print('reference name:',r.reference_name,'r.pos:',r.pos,'r.alen:',r.alen)
         return(None)
         amplBlockStart=-1
     if not amplBlockEnd or amplBlockChrom!=r.reference_name or r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd:
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, amplBlockEnd was not determined, amplBlockChrom!=reference name, '
-##                  'r.pos+r.alen<amplBlockStart or r.pos>amplBlockEnd')
-##            print('amplBlockStart:',amplBlockStart,'amplBlockChrom:',amplBlockChrom,'amplBlockEnd:',amplBlockEnd)
-##            print('reference name:',r.reference_name,'r.pos:',r.pos,'r.alen:',r.alen)
         return(None)
         amplBlockEnd=10000000000
     for cig in oldCigar:
@@ -585,23 +591,11 @@ def trimCigar(r,start=None,end=None,
     startSoftClipped=0
     try:
         if cigarStr[0]=='4' and (start or r.pos<amplBlockStart):
-##            if debug!=None and r.qname==debug:
-##                print('DEBUG INFO:')
-##                print(r.qname)
-##                print('For this read before shifting, cigarStr[0]==4 and (start or r.pos<amplBlockStart)')
-##                print('cigarStr:',cigarStr,'start:',start,'r.pos:',r.pos,'amplBlockStart:',amplBlockStart)
-##                print('startSoftClipped:',startSoftClipped,'newPos:',newPos,'amplLen:',amplLen)
             p=re.compile(cigarStr[0]+'+')
             m=p.findall(cigarStr)
             startSoftClipped=len(m[0])
             newPos-=len(m[0])
             amplLen+=len(m[0])
-##            if debug!=None and r.qname==debug:
-##                print('DEBUG INFO:')
-##                print(r.qname)
-##                print('For this read after shifting, cigarStr[0]==4 and (start or r.pos<amplBlockStart)')
-##                print('cigarStr:',cigarStr,'start:',start,'r.pos:',r.pos,'amplBlockStart:',amplBlockStart)
-##                print('startSoftClipped:',startSoftClipped,'newPos:',newPos,'amplLen:',amplLen)
     except IndexError:
         print('ERROR:',oldCigar)
         print(r)
@@ -610,19 +604,9 @@ def trimCigar(r,start=None,end=None,
     endSoftClipped=0
     try:
         if cigarStr[-1]=='4' and (end or r.pos+r.alen>amplBlockEnd):
-##            if debug!=None and r.qname==debug:
-##                print('DEBUG INFO:')
-##                print(r.qname)
-##                print('For this read before shifting, cigarStr[-1]==4 and (end or r.pos+r.alen>amplBlockEnd)')
-##                print('cigarStr:',cigarStr)
             p=re.compile(cigarStr[-1]+'+')
             m=p.findall(cigarStr)
             endSoftClipped=len(r.seq)-len(m[-1])
-##            if debug!=None and r.qname==debug:
-##                print('DEBUG INFO:')
-##                print(r.qname)
-##                print('For this read after shifting, cigarStr[-1]==4 and (end or r.pos+r.alen>amplBlockEnd)')
-##                print('cigarStr:',cigarStr,'endSoftClipped',endSoftClipped)
     except IndexError:
         print('ERROR:',oldCigar)
         print(r)
@@ -633,27 +617,12 @@ def trimCigar(r,start=None,end=None,
         (start==None or start<startSoftClipped)):
         start=None
         newPos=r.pos
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, amplBlockChrom==r.reference_name and r.pos>=amplBlockStart and (start==None or start<startSoftClipped)')
-##            print('start:',start,'newPos',newPos)
     if (amplBlockChrom==r.reference_name and
         r.pos+r.alen<=amplBlockEnd and
         (end==None or end<endSoftClipped)):
         end=None
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, amplBlockChrom==r.reference_name and r.pos+r.alen<=amplBlockEnd and (end==None or end<endSoftClipped)')
-##            print('end:',end)
     newCigarStr=''
     if (start or newPos<amplBlockStart-1) and (end or newPos+amplLen>amplBlockEnd):
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, (start or newPos<amplBlockStart-1) and (end or newPos+amplLen>amplBlockEnd)')
-##            print('start:',start,'end:',end,'newPos:',newPos,'amplLen:',amplLen,'amplBlockStart:',amplBlockStart,'amplBlockEnd:',amplBlockEnd)
         # We should consider deletions. We do not take them into account, while determining how we should trim cigar
         if not start:
             start=0
@@ -665,11 +634,6 @@ def trimCigar(r,start=None,end=None,
         startReady=False
         endReady=False
         if '2' in cigarStr or '1' in cigarStr:
-##            if debug!=None and r.qname==debug:
-##                print('DEBUG INFO:')
-##                print(r.qname)
-##                print('For this read, 2 in cigarStr or 1 in cigarStr')
-##                print('cigarStr:',cigarStr)
             # Number of soft-clipped nucleotides before newStart
             ## It can differ due to deletions
             startSoftClippedNum=newStart
@@ -681,32 +645,14 @@ def trimCigar(r,start=None,end=None,
                     if j<newStart:
                         # If there is deletion before end of primer
                         if cigarStr[j]=='2':
-##                            if debug!=None and r.qname==debug:
-##                                print('DEBUG INFO:')
-##                                print(r.qname)
-##                                print('For this read, when:')
-##                                print('j:',j,'newStart:',newStart,'cigarStr[j]==2')
-##                                print('newPos+=1','newStart+=1')
                             newPos+=1
                             newStart+=1
                         # If there is an insertion before end of primer
                         elif cigarStr[j]=='1':
-##                            if debug!=None and r.qname==debug:
-##                                print('DEBUG INFO:')
-##                                print(r.qname)
-##                                print('For this read, when:')
-##                                print('j:',j,'newStart:',newStart,'cigarStr[j]==1')
-##                                print('newPos-=1')
                             newPos-=1
                     # If primer sequence was removed, but read is wider than amplicon
                     ## -1 because when we read BAM-file with pysam, all positions starts from 0
                     elif newPos<amplBlockStart-1:
-##                        if debug!=None and r.qname==debug:
-##                            print('DEBUG INFO:')
-##                            print(r.qname)
-##                            print('For this read, when:')
-##                            print('j:',j,'newStart:',newStart,'newPos<amplBlockStart-1')
-##                            print('cigarStr[j]',cigarStr[j])
                         # Increase number of soft clipped nucleotides in all cases, except for deletions
                         if cigarStr[j]!='2':
                             startSoftClippedNum+=1
@@ -719,11 +665,11 @@ def trimCigar(r,start=None,end=None,
                     break
                 if j<=newEnd:
                     # If there is deletion before start of primer
-                    if cigarStr[j]=='2':# and newPos+newEnd<amplBlockEnd:
+                    if cigarStr[j]=='2':
                         newEnd+=1
-            if newPos-newStart+newEnd>amplBlockEnd:
+            if newPos-newStart+newEnd-cigarStr.count('1')>amplBlockEnd:
                 # startSoftClipped is a number of 'S' in the initial cigar
-                newEnd=amplBlockEnd-r.pos+startSoftClipped
+                newEnd=amplBlockEnd-r.pos+startSoftClipped+cigarStr.count('1')
             endSoftClippedNum=len(cigarStr)-newEnd-cigarStr[newEnd:].count('2')
             newCigarStr=clip*startSoftClippedNum+cigarStr[newStart:newEnd]+clip*(endSoftClippedNum)
             if hardClipping:
@@ -740,14 +686,7 @@ def trimCigar(r,start=None,end=None,
             if hardClipping:
                 r.seq=r.seq[newStart:-(len(cigarStr)-newEnd)]
                 r.qual=quals[newStart:-(len(cigarStr)-newEnd)]
-            if startReady or endReady:
-                print(startSoftClippedNum,endSoftClippedNum)
     elif (start or newPos<amplBlockStart-1):
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, (start or newPos<amplBlockStart-1)')
-##            print('start:',start,'end:',end,'newPos:',newPos,'amplLen:',amplLen,'amplBlockStart:',amplBlockStart,'amplBlockEnd:',amplBlockEnd)
         # We should consider deletions. We do not take them into account, while determining how we should trim cigar
         if not start:
             start=0
@@ -757,46 +696,20 @@ def trimCigar(r,start=None,end=None,
         ## It can differ due to deletions
         startSoftClippedNum=newStart
         if '2' in cigarStr or '1' in cigarStr:
-##            if debug!=None and r.qname==debug:
-##                print('DEBUG INFO:')
-##                print(r.qname)
-##                print('For this read, 2 in cigarStr or 1 in cigarStr')
-##                print('cigarStr:',cigarStr)
             for j in range(len(cigarStr)):
                 if j>=newStart and newPos>=amplBlockStart-1:
                     break
                 if j<newStart:
                     # If there is deletion before end of primer
                     if cigarStr[j]=='2':
-##                        if debug!=None and r.qname==debug:
-##                            print('DEBUG INFO:')
-##                            print(r.qname)
-##                            print('For this read, when:')
-##                            print('j:',j,'newStart:',newStart,'newPos:',newPos)
-##                            print('cigarStr[j]==2')
-##                            print('newPos+=1','newStart+=1')
                         newPos+=1
                         newStart+=1
                     # If there is an insertion before end of primer
                     elif cigarStr[j]=='1':
-##                        if debug!=None and r.qname==debug:
-##                            print('DEBUG INFO:')
-##                            print(r.qname)
-##                            print('For this read, when:')
-##                            print('j:',j,'newStart:',newStart,'newPos:',newPos)
-##                            print('cigarStr[j]==1')
-##                            print('newPos-=1')
                         newPos-=1
                 # If primer sequence was removed, but read is wider than amplicon
                 ## -1 because when we read BAM-file with pysam, all positions starts from 0
                 elif newPos<amplBlockStart-1:
-##                    if debug!=None and r.qname==debug:
-##                        print('DEBUG INFO:')
-##                        print(r.qname)
-##                        print('For this read, when:')
-##                        print('j:',j,'newStart:',newStart,'newPos:',newPos)
-##                        print('newPos<amplBlockStart-1')
-##                        print('cigarStr[j]',cigarStr[j])
                     # Increase number of soft clipped nucleotides in all cases, except for deletions
                     if cigarStr[j]!='2':
                         startSoftClippedNum+=1
@@ -804,28 +717,18 @@ def trimCigar(r,start=None,end=None,
                     if cigarStr[j]!='1':
                         newPos+=1
                     newStart+=1
-##                    if debug!=None and r.qname==debug:
-##                        print('DEBUG INFO:')
-##                        print(r.qname)
-##                        print('For this read, after all increases:')
-##                        print('j:',j,'newStart:',newStart,'newPos:',newPos,'cigarStr[j]',cigarStr[j])
             newCigarStr=clip*startSoftClippedNum+cigarStr[newStart:]
             if hardClipping:
                 r.seq=r.seq[startSoftClippedNum:]
                 r.qual=quals[startSoftClippedNum:]
         else:
-            newStart=max(start,amplBlockStart-r.pos-1)
+            newStart=max(start,amplBlockStart-newPos-1)
             newPos=max(newPos,amplBlockStart-1)
             newCigarStr=clip*newStart+cigarStr[newStart:]
             if hardClipping:
                 r.seq=r.seq[newStart:]
                 r.qual=quals[newStart:]
     elif (end or newPos+amplLen>amplBlockEnd):
-##        if debug!=None and r.qname==debug:
-##            print('DEBUG INFO:')
-##            print(r.qname)
-##            print('For this read, (end or newPos+amplLen>amplBlockEnd)')
-##            print('start:',start,'end:',end,'newPos:',newPos,'amplLen:',amplLen,'amplBlockStart:',amplBlockStart,'amplBlockEnd:',amplBlockEnd)
         # We should consider deletions. We do not count them when determine, how we should trim cigar
         delAfterEnd=0
         if not end:
@@ -849,7 +752,11 @@ def trimCigar(r,start=None,end=None,
                 r.seq=r.seq[:-endSoftClippedNum]
                 r.qual=quals[:-endSoftClippedNum]
         else:
-            newEnd=min(newEnd,amplBlockEnd-r.pos)
+            if cigarStr[0]=='4':
+                p=re.compile(cigarStr[0]+'+')
+                m=p.findall(cigarStr)
+                startSoftClipped=len(m[0])
+            newEnd=min(newEnd,amplBlockEnd-newPos+startSoftClipped)
             newCigarStr=cigarStr[:newEnd]+clip*(len(cigarStr)-newEnd)
             if hardClipping:
                 r.seq=r.seq[:-(len(cigarStr)-newEnd)]
@@ -910,8 +817,8 @@ if __name__ == "__main__":
     par.add_argument('--primersFileR1_3','-pr13',dest='primersFileR1_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R1 reads. It is not required. But if it is determined, -pr23 is necessary',required=False)
     par.add_argument('--primersFileR2_3','-pr23',dest='primersFileR2_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R2 reads',required=False)
     par.add_argument('--reads-with-forward','-freads',dest='forwardReadsNum',type=int,
-                     help='number of file with reads that contain forward-primers (1 or 2). Default: 2',
-                     default=2)
+                     help='number of file with reads that contain forward-primers (1 or 2)',
+                     required=True)
     par.add_argument('--trimmedReadsR1','-tr1',dest='trimmedReadsR1',type=str,help='name of file for trimmed R1 reads',required=False)
     par.add_argument('--trimmedReadsR2','-tr2',dest='trimmedReadsR2',type=str,help='name of file for trimmed R2 reads',required=False)
     par.add_argument('--untrimmedReadsR1','-utr1',dest='untrimmedReadsR1',type=str,help='name of file for untrimmed R1 reads. If you want to write reads that has not been trimmed to the same file as trimmed reads, type the same name',required=False)
@@ -1015,7 +922,7 @@ if __name__ == "__main__":
                 print('########')
                 exit(0)
     if idimer and not readsFileR2:
-        print('Warning! You did not provide R2-file so parameter "-idimer" will be ignored')
+        print('Warning! You did not provide R2-file so the parameter "-idimer" will be ignored')
         idimer=None
     if idimer:
         try:
@@ -1044,6 +951,11 @@ if __name__ == "__main__":
     primerR1_5_hashLens=set()
     primerR2_5_hashes={}
     primerR2_5_hashLens=set()
+    # Stores second primers that correspond to R1_5 primers
+    # {primer:[primerNum1,primerNum2...]}
+    primerToPrimers={}
+    # Stores list of R1_5 primer sequences
+    primerSeqs=[]
     i=0
     try:
         for r in SeqIO.parse(primersFileR1_5,'fasta'):
@@ -1052,6 +964,9 @@ if __name__ == "__main__":
                 primerSeq=str(r.seq.reverse_complement())
             else:
                 primerSeq=str(r.seq)
+            if primerSeq not in primerToPrimers.keys():
+                primerToPrimers[primerSeq]=[]
+            primerSeqs.append(primerSeq)
             primersR1_5.append('('+ambToRegList(primerSeq)+')')
             partLens=math.floor(len(primerSeq)/(int(errNumber)+1))
             hashes,lens=makeHashes(primerSeq,partLens)
@@ -1073,6 +988,11 @@ if __name__ == "__main__":
     if primersFileR2_5:
         primersR2_5=[]
         primersR2_5_names=[]
+        # Stores second primers that correspond to R1_5 primers
+        # {primer:[primerNum1,primerNum2...]}
+        primerToPrimersR2={}
+        # Stores list of R2_5 primer sequences
+        primerSeqsR2=[]
         i=0
         try:
             for r in SeqIO.parse(primersFileR2_5,'fasta'):
@@ -1081,6 +1001,12 @@ if __name__ == "__main__":
                     primerSeq=str(r.seq.reverse_complement())
                 else:
                     primerSeq=str(r.seq)
+                primerSeqsR2.append(primerSeq)
+                if primerSeq not in primerToPrimersR2.keys():
+                    primerToPrimersR2[primerSeq]=[]
+                primerR1_5=primerSeqs[len(primersR2_5_names)-1]
+                primerToPrimers[primerR1_5].append(len(primersR2_5_names)-1)
+                primerToPrimersR2[primerSeq].append(len(primersR2_5_names)-1)
                 primersR2_5.append('('+ambToRegList(primerSeq)+')')
                 partLens=math.floor(len(primerSeq)/(int(errNumber)+1))
                 hashes,lens=makeHashes(primerSeq,partLens)
@@ -1177,11 +1103,11 @@ if __name__ == "__main__":
         # Create Queue for storing result and Pool for multiprocessing
         primerErrorQ=[] 
         p=Pool(threads,initializer,(maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
-                                    primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
+                                    primerToPrimers,primerSeqs,primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
                                     primersFileR1_3,primersFileR2_5,primersFileR2_3,readsFileR2,primersStatistics,
                                     idimer,primer3absent,minPrimer3Len))
         # Cutting primers and writing result immediately
-        print('Trimming primers from reads...')
+        print('Trimming primers from FASTQ...')
         doneWork=0
         showPercWork(0,allWork)
         for res in p.imap_unordered(trimPrimers,zip(data1,data2),10):
@@ -1190,7 +1116,10 @@ if __name__ == "__main__":
             if res[1]!=[]:
                 primerErrorQ.append(res[1])
             if readsFileR2:
-                if res[0][0][0] is not None and res[0][0][1] is not None:
+                if (res[0][0][0] is not None and
+                    res[0][0][1] is not None and
+                    len(res[0][0][0].seq)>=minReadLen and
+                    len(res[0][0][1].seq)>=minReadLen):
                     SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
                     SeqIO.write(res[0][0][1],trimmedReadsR2,'fastq')
                 elif res[0][1][0] is not None and res[0][1][1] is not None:
@@ -1211,14 +1140,21 @@ if __name__ == "__main__":
                     else:
                         SeqIO.write(res[0][1][0],untrimmedReadsR1,'fastq')
                         SeqIO.write(res[0][1][1],untrimmedReadsR2,'fastq')
-                            
+                elif (len(res[0][0][0].seq)<minReadLen or
+                      len(res[0][0][1].seq)<minReadLen):
+                    SeqIO.write(res[0][0][0],untrimmedReadsR1,'fastq')
+                    SeqIO.write(res[0][0][1],untrimmedReadsR2,'fastq')
                 else:
                     print('ERROR: nor the 1st item of function result list or 2nd contains anything')
                     print(res)
                     exit(0)
             else:
                 if res[0][0][0] is not None:
-                    SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
+                    if (len(res[0][0][0].seq)<minReadLen or
+                        len(res[0][0][1].seq)<minReadLen):
+                        SeqIO.write(res[0][0][0],untrimmedReadsR1,'fastq')
+                    else:
+                        SeqIO.write(res[0][0][0],trimmedReadsR1,'fastq')
                 elif res[0][1][0] is not None:
                     SeqIO.write(res[0][1][0],untrimmedReadsR1,'fastq')
                 else:
@@ -1409,7 +1345,7 @@ if __name__ == "__main__":
         matePositions={}
         for r in reads:
             results.append(p.apply_async(trimPrimersInBam,args=(r,coordToPrimerNum,amplCoords,maxPrimerLen,primerLocBuf,errNumber,primersR1_5,primersR1_3,primersR2_5,primersR2_3,
-                                                                primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
+                                                                primerToPrimers,primerSeqs,primerToPrimersR2,primerSeqsR2,primerR1_5_hashes,primerR1_5_hashLens,primerR2_5_hashes,primerR2_5_hashLens,
                                                                 primersFileR1_3,primersFileR2_5,primersFileR2_3,primer3absent,minPrimer3Len,minReadLen,hardClipping)))
         doneWork=0
         allWork=len(results)
