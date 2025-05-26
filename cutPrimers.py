@@ -817,8 +817,8 @@ if __name__ == "__main__":
     par.add_argument('--primersFileR1_3','-pr13',dest='primersFileR1_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R1 reads. It is not required. But if it is determined, -pr23 is necessary',required=False)
     par.add_argument('--primersFileR2_3','-pr23',dest='primersFileR2_3',type=str,help='fasta-file with sequences of primers on the 3\'-end of R2 reads',required=False)
     par.add_argument('--reads-with-forward','-freads',dest='forwardReadsNum',type=int,
-                     help='number of file with reads that contain forward-primers (1 or 2)',
-                     required=True)
+                     help='number of file with reads that contain forward-primers (1 or 2). Required, if BAM-file is used',
+                     required=False,default=1)
     par.add_argument('--trimmedReadsR1','-tr1',dest='trimmedReadsR1',type=str,help='name of file for trimmed R1 reads',required=False)
     par.add_argument('--trimmedReadsR2','-tr2',dest='trimmedReadsR2',type=str,help='name of file for trimmed R2 reads',required=False)
     par.add_argument('--untrimmedReadsR1','-utr1',dest='untrimmedReadsR1',type=str,help='name of file for untrimmed R1 reads. If you want to write reads that has not been trimmed to the same file as trimmed reads, type the same name',required=False)
@@ -871,6 +871,9 @@ if __name__ == "__main__":
     if bamFile and not coordsFile:
         print('ERROR! If you use BAM-file as an input, you should use -coord for file with coordinates of amplicons')
         exit(1)
+    if bamFile and not args.forwardReadsNum:
+        print("ERROR! If you use BAM-file as an input, you should use -freads to define primers' location in the reads")
+        exit(10)
     try:
         if args.trimmedReadsR1:
             if args.trimmedReadsR1[-3:]!='.gz':
@@ -1269,17 +1272,20 @@ if __name__ == "__main__":
             primersStatistics.close()
 
             primersStatisticsPos.write('\t'.join(['Position_in_primer','Number_of_mutations_in_R1','Number_of_mutations_in_R2'])+'\n')
-            for pos in range(1,max(max(primersErrorsPos[0].keys()),max(primersErrorsPos[1].keys()))+1):
-                line=[str(pos)]
-                if pos in primersErrorsPos[0].keys():
-                    line.append(str(primersErrorsPos[0][pos]))
-                else:
-                    line.append('N/A')
-                if pos in primersErrorsPos[1].keys():
-                    line.append(str(primersErrorsPos[1][pos]))
-                else:
-                    line.append('N/A')
-                primersStatisticsPos.write('\t'.join(line)+'\n')
+            primerPosJoin=[*primersErrorsPos[0].keys(),
+                           *primersErrorsPos[1].keys()]
+            if len(primerPosJoin)>0:
+                for pos in range(1,max(primerPosJoin)+1):
+                    line=[str(pos)]
+                    if pos in primersErrorsPos[0].keys():
+                        line.append(str(primersErrorsPos[0][pos]))
+                    else:
+                        line.append('N/A')
+                    if pos in primersErrorsPos[1].keys():
+                        line.append(str(primersErrorsPos[1][pos]))
+                    else:
+                        line.append('N/A')
+                    primersStatisticsPos.write('\t'.join(line)+'\n')
             primersStatisticsPos.close()
 
             primersStatisticsType.write('\t'.join(['Error_type','Number_of_mutations_in_R1','Number_of_mutations_in_R2'])+'\n')
